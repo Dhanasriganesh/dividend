@@ -46,10 +46,10 @@ const SharePrice = () => {
 
   // Financial Indicators section state (moved from Financial.jsx)
   const [fiUpdatedPrice, setFiUpdatedPrice] = useState('');
-  const [fiDividend, setFiDividend] = useState('');
 
   useEffect(() => {
     const fetchSharePrices = async () => {
+      console.log('Fetching share prices...'); // Debug log
       const { data, error } = await supabase
         .from('share_prices')
         .select('*')
@@ -58,7 +58,9 @@ const SharePrice = () => {
 
       if (error) {
         console.error('Error fetching share prices:', error);
+        alert('Error loading share prices: ' + error.message);
       } else {
+        console.log('Share prices fetched:', data); // Debug log
         // Sort by year desc, then by month desc locally
         const sortedData = (data || []).sort((a, b) => {
           if (a.year !== b.year) {
@@ -94,44 +96,55 @@ const SharePrice = () => {
     const existing = sharePrices.find(sp => sp.year === year && sp.month === month);
     const present = existing?.price ? existing.price.toString() : '';
     setFiUpdatedPrice(present);
-    // Best effort: if table has dividend_per_share, prefill; else leave blank
-    setFiDividend(existing?.dividend_per_share ? String(existing.dividend_per_share) : '');
   }, [year, month, sharePrices]);
 
   const handleAddSharePrice = async (e) => {
     e.preventDefault();
-    if (!price.trim() || !year || !month) return;
+    console.log('Add share price attempt:', { price, year, month }); // Debug log
+    
+    if (!price.trim() || !year || !month) {
+      console.log('Validation failed:', { price: price.trim(), year, month }); // Debug log
+      alert('Please fill in all fields');
+      return;
+    }
     
     setLoading(true);
     try {
       // Check if share price already exists for this year and month
       const existingPrice = sharePrices.find(sp => sp.year === year && sp.month === month);
       if (existingPrice) {
+        console.log('Share price already exists:', existingPrice); // Debug log
         alert('Share price already exists for this month and year');
         setLoading(false);
         return;
       }
 
-      const { error } = await supabase
+      const sharePriceData = {
+        year: parseInt(year),
+        month,
+        price: parseFloat(price),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      
+      console.log('Inserting share price data:', sharePriceData); // Debug log
+
+      const { data, error } = await supabase
         .from('share_prices')
-        .insert({
-          year: parseInt(year),
-          month,
-          price: parseFloat(price),
-          dividend_per_share: fiDividend ? parseFloat(fiDividend) : null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
+        .insert(sharePriceData)
+        .select(); // Add .select() to get the inserted data
 
       if (error) {
         console.error('Error adding share price:', error);
         alert('Error adding share price: ' + error.message);
       } else {
+        console.log('Share price added successfully:', data); // Debug log
         setPrice('');
+        alert('Share price added successfully!');
       }
     } catch (err) {
       console.error('Error adding share price:', err);
-      alert('Error adding share price');
+      alert('Error adding share price: ' + err.message);
     }
     setLoading(false);
   };
@@ -146,7 +159,6 @@ const SharePrice = () => {
           .from('share_prices')
           .update({
             price: fiUpdatedPrice ? parseFloat(fiUpdatedPrice) : existing.price,
-            dividend_per_share: fiDividend ? parseFloat(fiDividend) : null,
             updated_at: new Date().toISOString()
           })
           .eq('id', existing.id);
@@ -160,7 +172,6 @@ const SharePrice = () => {
             year: parseInt(year),
             month,
             price: fiUpdatedPrice ? parseFloat(fiUpdatedPrice) : 0,
-            dividend_per_share: fiDividend ? parseFloat(fiDividend) : null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           });
@@ -273,7 +284,7 @@ const SharePrice = () => {
         {/* Financial Indicators Section */}
         <div className="bg-white shadow-sm rounded-lg border border-amber-200 p-6 mb-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Financial Indicators</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Present Share Price</label>
               <input
@@ -293,18 +304,6 @@ const SharePrice = () => {
                 onChange={(e) => setFiUpdatedPrice(e.target.value)}
                 className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm"
                 placeholder="Enter updated share price"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Dividend Per Share</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={fiDividend}
-                onChange={(e) => setFiDividend(e.target.value)}
-                className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm"
-                placeholder="Enter dividend per share"
               />
             </div>
           </div>

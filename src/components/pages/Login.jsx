@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../supabase/config';
+import { useAuth } from '../../context/AuthContext';
+import { EMPLOYEE_CREDENTIALS } from '../../context/AuthContext';
 import bgImage from '../../assets/bg.jpg';
 
 const Login = () => {
@@ -17,16 +19,52 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      // Check if this is an employee login
+      if (EMPLOYEE_CREDENTIALS[email]) {
+        // Validate employee credentials
+        if (EMPLOYEE_CREDENTIALS[email] === password) {
+          // For now, let's try to sign in with the same credentials to Supabase
+          // This assumes the employee emails exist in Supabase with the same passwords
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
 
-      if (error) {
-        setError('Failed to log in. Please check your credentials.');
-        console.error('Login error:', error);
+          if (error) {
+            // If Supabase login fails, create a mock session but warn about data access
+            console.warn('Employee Supabase login failed, using mock session:', error.message);
+            
+            const mockUser = {
+              id: `employee_${email.split('@')[0]}`,
+              email: email,
+              user_metadata: { role: 'employee' }
+            };
+            
+            // Store in localStorage for session management
+            localStorage.setItem('employeeSession', JSON.stringify({
+              user: mockUser,
+              expires_at: Date.now() + (24 * 60 * 60 * 1000) // 24 hours
+            }));
+          }
+          
+          // Navigate to admin regardless of Supabase auth status
+          window.location.href = '/admin';
+        } else {
+          setError('Invalid employee credentials.');
+        }
       } else {
-        navigate('/admin');
+        // Regular admin login with Supabase
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) {
+          setError('Failed to log in. Please check your credentials.');
+          console.error('Login error:', error);
+        } else {
+          navigate('/admin');
+        }
       }
     } catch (error) {
       setError('Failed to log in. Please check your credentials.');
@@ -171,6 +209,16 @@ const Login = () => {
             <p className="text-xs text-gray-500">
               Secure access to your organization's management system
             </p>
+            <button
+              onClick={() => {
+                localStorage.removeItem('employeeSession');
+                localStorage.removeItem('employeePermissions');
+                window.location.reload();
+              }}
+              className="mt-2 text-xs text-gray-400 hover:text-gray-300 underline"
+            >
+              Clear Sessions & Reload
+            </button>
           </div>
         </div>
       </div>
