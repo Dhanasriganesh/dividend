@@ -83,18 +83,34 @@ function MonthlyActivity() {
     return () => { sub.unsubscribe(); };
   }, [id, year, month]);
 
-  // Fetch current month's share price
+  // Fetch current quarter's share price
   useEffect(() => {
     const fetchSharePrice = async () => {
       if (!year || !month) return;
       
       setLoadingSharePrice(true);
       try {
+        // Get quarter from month (rolling 3-month quarters)
+        const getQuarterFromMonth = (month, year) => {
+          const monthIndex = months.indexOf(month);
+          if (monthIndex === -1) return null;
+          
+          // Calculate the quarter start month (every 3 months: 0, 3, 6, 9)
+          const quarterStartMonth = Math.floor(monthIndex / 3) * 3;
+          const quarterEndMonth = quarterStartMonth + 2;
+          
+          const startMonthName = months[quarterStartMonth];
+          const endMonthName = months[quarterEndMonth];
+          
+          return `${startMonthName}-${endMonthName}-${year}`;
+        };
+        
+        const quarter = getQuarterFromMonth(month, parseInt(year));
         const { data, error } = await supabase
           .from('share_prices')
           .select('*')
           .eq('year', parseInt(year))
-          .eq('month', month)
+          .eq('quarter', quarter)
           .single();
         if (!error && data) {
           setCurrentSharePrice(data.price);
@@ -490,13 +506,16 @@ function MonthlyActivity() {
                       type="text" 
                       value={loadingSharePrice ? 'Loading...' : (currentSharePrice ? `₹${currentSharePrice.toFixed(2)}` : 'No price set')} 
                       onChange={(e) => setInvSharePrice(e.target.value)} 
-                      className="w-full px-3 py-2 rounded-lg border border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500" 
+                      className={`w-full px-3 py-2 rounded-lg border ${currentSharePrice ? 'border-amber-300' : 'border-red-300 bg-red-50'} focus:outline-none focus:ring-2 focus:ring-amber-500`}
                       placeholder="—" 
                       disabled={loadingSharePrice || currentSharePrice !== null || loadingMember || !isEditablePeriod}
                     />
+                    {!currentSharePrice && !loadingSharePrice && (
+                      <p className="text-xs text-red-600 mt-1">⚠️ Share price must be set for this quarter before recording investments</p>
+                    )}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Custom receipt</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">System receipt</label>
                     <input 
                       type="text" 
                       value={invCustomReceipt} 
@@ -510,10 +529,10 @@ function MonthlyActivity() {
                   <div className="flex items-center justify-end">
                     <button 
                       onClick={handleSaveInvestment} 
-                      disabled={saving || !isEditablePeriod || !invAmount || !invCustomReceipt || !invCustomReceipt.trim() || loadingMember || loadingSharePrice} 
+                      disabled={saving || !isEditablePeriod || !invAmount || !invCustomReceipt || !invCustomReceipt.trim() || loadingMember || loadingSharePrice || !currentSharePrice} 
                       className="rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2 disabled:opacity-50"
                     >
-                      {saving ? 'Saving…' : loadingMember ? 'Loading...' : 'Save'}
+                      {saving ? 'Saving…' : loadingMember ? 'Loading...' : !currentSharePrice ? 'Share Price Required' : 'Save'}
                     </button>
                   </div>
                 </div>
@@ -531,9 +550,12 @@ function MonthlyActivity() {
                     type="text" 
                     value={loadingSharePrice ? 'Loading...' : (currentSharePrice ? `₹${currentSharePrice.toFixed(2)}` : 'No price set')} 
                     readOnly 
-                    className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-amber-50" 
+                    className={`w-full px-3 py-2 rounded-lg border ${currentSharePrice ? 'border-amber-300 bg-amber-50' : 'border-red-300 bg-red-50'}`}
                     placeholder="—" 
                   />
+                  {!currentSharePrice && !loadingSharePrice && (
+                    <p className="text-xs text-red-600 mt-1">⚠️ Share price must be set for this quarter before processing withdrawals</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Total number of shares</label>
@@ -561,7 +583,14 @@ function MonthlyActivity() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Amount to be withdrawn (₹)</label>
-                  <input type="number" value={wdAmountToWithdraw} onChange={(e) => setWdAmountToWithdraw(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="Enter amount" />
+                  <input 
+                    type="number" 
+                    value={wdAmountToWithdraw} 
+                    onChange={(e) => setWdAmountToWithdraw(e.target.value)} 
+                    className={`w-full px-3 py-2 rounded-lg border ${currentSharePrice ? 'border-amber-300' : 'border-red-300 bg-red-50'} focus:outline-none focus:ring-2 focus:ring-amber-500`} 
+                    placeholder="Enter amount" 
+                    disabled={!currentSharePrice}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Shares to withdraw</label>
@@ -581,7 +610,9 @@ function MonthlyActivity() {
 
               {!wdApproved ? (
                 <div className="flex items-center gap-3">
-                  <button onClick={handleApproveWithdrawal} disabled={!wdAmountToWithdraw || !isEditablePeriod} className="rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2 disabled:opacity-50">Approve</button>
+                  <button onClick={handleApproveWithdrawal} disabled={!wdAmountToWithdraw || !isEditablePeriod || !currentSharePrice} className="rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2 disabled:opacity-50">
+                    {!currentSharePrice ? 'Share Price Required' : 'Approve'}
+                  </button>
                   <button onClick={handleDenyWithdrawal} className="rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 text-sm font-semibold px-4 py-2">Deny</button>
                 </div>
               ) : (
@@ -619,7 +650,9 @@ function MonthlyActivity() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <button onClick={handleConfirmWithdrawal} disabled={!isEditablePeriod} className="rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2">Confirm</button>
+                    <button onClick={handleConfirmWithdrawal} disabled={!isEditablePeriod || !currentSharePrice} className="rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2 disabled:opacity-50">
+                      {!currentSharePrice ? 'Share Price Required' : 'Confirm'}
+                    </button>
                     <button onClick={handleDenyWithdrawal} className="rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 text-sm font-semibold px-4 py-2">Deny</button>
                   </div>
                 </div>

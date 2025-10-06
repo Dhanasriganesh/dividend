@@ -9,7 +9,7 @@ const Payment = () => {
   const [formData, setFormData] = useState({
     dateOfJoining: new Date().toISOString().split('T')[0], // Today's date by default
     membershipId: '',
-    payingMembershipAmount: '',
+    payingMembershipAmount: '10000', // Default membership amount
     membershipType: '',
     paymentStatus: 'due', // 'paid' or 'due'
     dueAmount: '',
@@ -269,12 +269,30 @@ const Payment = () => {
           const yr = now.getFullYear();
           const mon = now.toLocaleString('default', { month: 'short' });
 
-          // Get current share price for this month
+          // Get quarter from current month (rolling 3-month quarters)
+          const getQuarterFromMonth = (month, year) => {
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const monthIndex = months.indexOf(month);
+            if (monthIndex === -1) return null;
+            
+            // Calculate the quarter start month (every 3 months: 0, 3, 6, 9)
+            const quarterStartMonth = Math.floor(monthIndex / 3) * 3;
+            const quarterEndMonth = quarterStartMonth + 2;
+            
+            const startMonthName = months[quarterStartMonth];
+            const endMonthName = months[quarterEndMonth];
+            
+            return `${startMonthName}-${endMonthName}-${year}`;
+          };
+          
+          const quarter = getQuarterFromMonth(mon, yr);
+          
+          // Get current share price for this quarter
           const { data: priceRow } = await supabase
             .from('share_prices')
             .select('price')
             .eq('year', yr)
-            .eq('month', mon)
+            .eq('quarter', quarter)
             .single();
           const price = priceRow?.price ? parseFloat(priceRow.price) : 0;
           if (price > 0) {
@@ -482,6 +500,9 @@ const Payment = () => {
                   placeholder="Enter amount"
                   min="0"
                 />
+                <p className="text-xs text-blue-600 mt-1">
+                  💡 Membership amount can be refunded after 1 year from joining date (optional, not automatic)
+                </p>
                 {errors.payingMembershipAmount && <span className="text-xs text-red-500">{errors.payingMembershipAmount}</span>}
               </div>
 

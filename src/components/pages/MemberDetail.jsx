@@ -180,6 +180,53 @@ const MemberDetail = () => {
     setLoading(false);
   };
 
+  const handleMarkDueAsPaid = async (dueAmount) => {
+    if (!member) return;
+    
+    const confirmPayment = window.confirm(
+      `Mark due amount ₹${dueAmount.toFixed(2)} as paid?\n\nThis will update the payment status to "Paid" and clear the due amount. The amount will be added to fine collection.`
+    );
+    
+    if (!confirmPayment) return;
+    
+    setLoading(true);
+    
+    try {
+      // Update both top-level columns and nested payment object
+      const updateData = {
+        payment_status: 'paid',
+        payment_due_amount: '',
+        payment: {
+          ...member.payment,
+          paymentStatus: 'paid',
+          dueAmount: '', // Clear current due amount
+          originalDueAmount: dueAmount, // Store original due amount for fine tracking
+          duePaymentDate: new Date().toISOString(),
+          duePaymentMethod: 'cash' // Default to cash
+        },
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabase
+        .from('members')
+        .update(updateData)
+        .eq('id', member.id);
+
+      if (error) throw error;
+
+      // Show success message
+      alert(`✅ Due amount of ₹${dueAmount.toFixed(2)} has been marked as paid!\n\nThis amount will now appear in the fine collection in Company Amount page.`);
+      
+      // The page will automatically refresh due to the real-time subscription
+      
+    } catch (err) {
+      console.error('Error marking due as paid:', err);
+      alert('❌ Error updating payment status. Please try again.');
+    }
+    
+    setLoading(false);
+  };
+
   const createdDate = member?.createdAt?.toDate ? member.createdAt.toDate() : (member?.createdAt?.seconds ? new Date(member.createdAt.seconds * 1000) : null);
   const paymentJoinDate = member?.payment?.dateOfJoining ? new Date(member.payment.dateOfJoining) : null;
   const joiningDate = paymentJoinDate || createdDate;
@@ -331,6 +378,41 @@ const MemberDetail = () => {
               <h3 className="text-sm font-semibold text-slate-700 mb-2">Membership Amount</h3>
               <div className="text-3xl font-extrabold text-slate-900">₹{parseFloat(member?.payment?.payingMembershipAmount || 0)}</div>
               <p className="text-xs text-slate-500 mt-1">Configured on Payment step</p>
+              
+              {/* Due Amount Section */}
+              {(() => {
+                const paymentStatus = member?.payment?.paymentStatus || member?.payment_status;
+                const dueAmount = parseFloat(member?.payment?.dueAmount || member?.payment_due_amount || 0);
+                const isDue = paymentStatus === 'due' && dueAmount > 0;
+                
+                return isDue ? (
+                  <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-red-800">Due Amount</p>
+                        <p className="text-lg font-bold text-red-900">₹{dueAmount.toFixed(2)}</p>
+                      </div>
+                      <button
+                        onClick={() => handleMarkDueAsPaid(dueAmount)}
+                        disabled={loading}
+                        className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {loading ? 'Processing...' : 'Paid Now'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-red-600 mt-1">Outstanding payment from registration</p>
+                  </div>
+                ) : paymentStatus === 'paid' ? (
+                  <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <CheckIcon className="w-4 h-4 text-green-600" />
+                      <span className="text-sm font-medium text-green-800">Fully Paid</span>
+                    </div>
+                    <p className="text-xs text-green-600 mt-1">All membership fees settled</p>
+                  </div>
+                ) : null;
+              })()}
+              
               <button
                 onClick={() => navigate('/admin')}
                 className="mt-4 w-full rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium py-2.5"

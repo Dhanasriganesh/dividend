@@ -343,6 +343,44 @@ const Admin = () => {
             </button>
           )}
 
+          {/* Share Price Tile */}
+          {hasTileAccess(TILE_PERMISSIONS.SHARE_PRICE) && (
+            <button
+              onClick={() => navigate('/share-price')}
+              className="group relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-amber-600 font-medium">Insights</p>
+                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Quarterly Share Price</h3>
+                  <p className="mt-1 text-sm text-gray-500">Update and view prices</p>
+                </div>
+                <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
+                  ₹
+                </div>
+              </div>
+            </button>
+          )}
+
+          {/* Membership Refund Tile */}
+          {hasTileAccess(TILE_PERMISSIONS.MEMBERS) && (
+            <button
+              onClick={() => navigate('/membership-refund')}
+              className="group relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-amber-600 font-medium">Finance</p>
+                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Membership Refunds</h3>
+                  <p className="mt-1 text-sm text-gray-500">Process ₹10,000 refunds after 1 year</p>
+                </div>
+                <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
+                  💰
+                </div>
+              </div>
+            </button>
+          )}
+
           {/* Company Account Tile */}
           {companyMember && hasTileAccess(TILE_PERMISSIONS.COMPANY_ACCOUNT) && (
             <button
@@ -427,7 +465,7 @@ const Admin = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-amber-600 font-medium">Finance</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Company Amount</h3>
+                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Company Owns Amount</h3>
                   <p className="mt-1 text-sm text-gray-500">Manage company capital</p>
                 </div>
                 <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
@@ -437,27 +475,29 @@ const Admin = () => {
             </button>
           )}
 
-          {/* Share Price Tile */}
-          {hasTileAccess(TILE_PERMISSIONS.SHARE_PRICE) && (
+          {/* Reports Tile */}
+          {hasTileAccess(TILE_PERMISSIONS.DOWNLOAD_REPORT) && (
             <button
-              onClick={() => navigate('/share-price')}
+              onClick={() => navigate('/reports')}
               className="group relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm hover:shadow-md transition-shadow"
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-amber-600 font-medium">Insights</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Monthly Share Price</h3>
-                  <p className="mt-1 text-sm text-gray-500">Update and view prices</p>
+                  <p className="text-xs text-amber-600 font-medium">Analytics</p>
+                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Reports</h3>
+                  <p className="mt-1 text-sm text-gray-500">Generate and download reports</p>
                 </div>
                 <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
-                  ₹
+                  📊
                 </div>
               </div>
             </button>
           )}
 
+
+
           {/* Download Report Tile */}
-          {hasTileAccess(TILE_PERMISSIONS.DOWNLOAD_REPORT) && (
+          {/* {hasTileAccess(TILE_PERMISSIONS.DOWNLOAD_REPORT) && (
             <div className="relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm">
               <div className="flex items-center justify-between mb-3">
                 <div>
@@ -495,7 +535,7 @@ const Admin = () => {
                 </button>
               </div>
             </div>
-          )}
+          )} */}
         </div>
 
         {/* Employee Access Management Modal */}
@@ -529,7 +569,7 @@ const Admin = () => {
                             [TILE_PERMISSIONS.MEMBERS]: 'Members',
                             [TILE_PERMISSIONS.DIVIDEND_DONATION]: 'Dividend Donation',
                             [TILE_PERMISSIONS.ADD_MEMBER]: 'Add Member',
-                            [TILE_PERMISSIONS.COMPANY_AMOUNT]: 'Company Amount',
+                            [TILE_PERMISSIONS.COMPANY_AMOUNT]: 'Company Owns Amount',
                             [TILE_PERMISSIONS.SHARE_PRICE]: 'Share Price',
                             [TILE_PERMISSIONS.DOWNLOAD_REPORT]: 'Download Report'
                           };

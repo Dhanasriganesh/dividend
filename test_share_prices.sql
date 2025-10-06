@@ -24,3 +24,5 @@ WHERE tc.table_name = 'share_prices' AND tc.table_schema = 'public';
 -- INSERT INTO share_prices (year, month, price, created_at, updated_at) 
 -- VALUES (2025, 'Oct', 0.03, NOW(), NOW());
 
+
+

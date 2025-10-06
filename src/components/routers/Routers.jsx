@@ -9,9 +9,11 @@ import Payment from '../pages/addMember/Payment';
 import Compamt from '../pages/Compamt';
 import Pd from '../pages/addMember/Pd';
 import MonthlyActivity from '../pages/MonthlyActivity';
-import MainAdmin from '../pages/MainAdmin';
 import SharePrice from '../pages/SharePrice';
 import Members from '../pages/Members';
+import MembershipRefund from '../pages/MembershipRefund';
+import Reports from '../pages/Reports';
+import Dividend from '../pages/Dividend';
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
   const { currentUser } = useAuth();
@@ -30,6 +32,14 @@ function Routers() {
         element={
           <ProtectedRoute>
             <Admin />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/dividend" 
+        element={
+          <ProtectedRoute>
+            <Dividend />
           </ProtectedRoute>
         } 
       />
@@ -91,19 +101,28 @@ function Routers() {
           </ProtectedRoute>
         }
       />
-      <Route
-        path="/main-admin"
-        element={
-          <ProtectedRoute>
-            <MainAdmin />
-          </ProtectedRoute>
-        }
-      />
+     
       <Route
         path="/share-price"
         element={
           <ProtectedRoute>
             <SharePrice />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/membership-refund"
+        element={
+          <ProtectedRoute>
+            <MembershipRefund />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reports"
+        element={
+          <ProtectedRoute>
+            <Reports />
           </ProtectedRoute>
         }
       />
