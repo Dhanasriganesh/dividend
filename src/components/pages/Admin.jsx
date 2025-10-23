@@ -351,9 +351,9 @@ const Admin = () => {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-amber-600 font-medium">Insights</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Quarterly Share Price</h3>
-                  <p className="mt-1 text-sm text-gray-500">Update and view prices</p>
+                  <p className="text-xs text-amber-600 font-medium">Pricing</p>
+                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Monthly Share Price</h3>
+                  <p className="mt-1 text-sm text-gray-500">Set prices month by month</p>
                 </div>
                 <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
                   ₹
@@ -372,7 +372,7 @@ const Admin = () => {
                 <div>
                   <p className="text-xs text-amber-600 font-medium">Finance</p>
                   <h3 className="mt-1 text-lg font-semibold text-gray-900">Membership Refunds</h3>
-                  <p className="mt-1 text-sm text-gray-500">Process ₹10,000 refunds after 1 year</p>
+                  <p className="mt-1 text-sm text-gray-500">Settle ₹10,000 refunds (eligible after 5 years)</p>
                 </div>
                 <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
                   💰

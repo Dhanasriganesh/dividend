@@ -64,37 +64,52 @@ const MembershipRefund = () => {
     if (!member.payment?.dateOfJoining) return false;
     
     const joiningDate = new Date(member.payment.dateOfJoining);
-    const oneYearLater = new Date(joiningDate);
-    oneYearLater.setFullYear(oneYearLater.getFullYear() + 1);
+    const fiveYearsLater = new Date(joiningDate);
+    fiveYearsLater.setFullYear(fiveYearsLater.getFullYear() + 5);
     
-    return new Date() >= oneYearLater;
+    return new Date() >= fiveYearsLater;
   };
 
   const getDaysUntilEligible = (member) => {
     if (!member.payment?.dateOfJoining) return null;
     
     const joiningDate = new Date(member.payment.dateOfJoining);
-    const oneYearLater = new Date(joiningDate);
-    oneYearLater.setFullYear(oneYearLater.getFullYear() + 1);
+    const fiveYearsLater = new Date(joiningDate);
+    fiveYearsLater.setFullYear(fiveYearsLater.getFullYear() + 5);
     
-    const diffTime = oneYearLater - new Date();
+    const diffTime = fiveYearsLater - new Date();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
     return diffDays > 0 ? diffDays : 0;
+  };
+
+  const getYearsSinceJoining = (member) => {
+    if (!member.payment?.dateOfJoining) return 0;
+    
+    const joiningDate = new Date(member.payment.dateOfJoining);
+    const diffTime = new Date() - joiningDate;
+    const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
+    
+    return diffYears.toFixed(1);
   };
 
   const hasRefunded = (member) => {
     return member.payment?.membershipRefunded === true;
   };
 
-  const handleProcessRefund = async (member) => {
-    if (!window.confirm(`Are you sure you want to process a refund of ₹10,000 for ${member.name}?`)) {
+  const handleSettleRefund = async (member) => {
+    const yearsSinceJoining = getYearsSinceJoining(member);
+    const confirmMessage = yearsSinceJoining >= 5 
+      ? `Settle refund of ₹10,000 for ${member.name}?\n\nMember has completed ${yearsSinceJoining} years and is eligible for refund.`
+      : `Settle refund of ₹10,000 for ${member.name}?\n\nNote: Member has only completed ${yearsSinceJoining} years (less than 5 years). Are you sure you want to settle now?`;
+    
+    if (!window.confirm(confirmMessage)) {
       return;
     }
 
     setProcessingRefund(true);
     try {
-      // Update member record to mark as refunded
+      // Update member record to mark as refunded/settled
       const { error: updateError } = await supabase
         .from('members')
         .update({
@@ -102,7 +117,8 @@ const MembershipRefund = () => {
             ...member.payment,
             membershipRefunded: true,
             refundDate: new Date().toISOString(),
-            refundAmount: 10000
+            refundAmount: 10000,
+            settledEarly: yearsSinceJoining < 5
           }
         })
         .eq('id', member.id);
@@ -127,18 +143,18 @@ const MembershipRefund = () => {
           share_price: 0,
           shares: 0,
           created_at: new Date().toISOString(),
-          description: `Membership refund for ${member.name} - 1 year after joining`
+          description: `Membership refund settled for ${member.name} - ${yearsSinceJoining} years after joining`
         });
 
       if (txError) {
         throw txError;
       }
 
-      alert('Membership refund processed successfully!');
+      alert(`✅ Membership refund settled successfully!\n\nMember: ${member.name}\nAmount: ₹10,000\nYears since joining: ${yearsSinceJoining}`);
       fetchMembers(); // Refresh the list
     } catch (error) {
-      console.error('Error processing refund:', error);
-      alert('Error processing refund: ' + error.message);
+      console.error('Error settling refund:', error);
+      alert('❌ Error settling refund: ' + error.message);
     }
     setProcessingRefund(false);
   };
@@ -152,15 +168,16 @@ const MembershipRefund = () => {
     }
   };
 
+  // Separate members into three categories
+  const settledMembers = members.filter(member => hasRefunded(member));
+  
   const eligibleMembers = members.filter(member => 
     isEligibleForRefund(member) && !hasRefunded(member)
   );
 
-  const ineligibleMembers = members.filter(member => 
+  const pendingMembers = members.filter(member => 
     !isEligibleForRefund(member) && !hasRefunded(member)
   );
-
-  const refundedMembers = members.filter(member => hasRefunded(member));
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-amber-50 to-white">
@@ -178,7 +195,7 @@ const MembershipRefund = () => {
               </button>
               <div>
                 <h1 className="text-xl font-bold text-gray-900">Membership Refund Management</h1>
-                <p className="text-sm text-gray-500">Process membership refunds after 1 year from joining</p>
+                <p className="text-sm text-gray-500">Process membership refunds (Eligible after 5 years, can settle anytime)</p>
               </div>
             </div>
 
@@ -214,8 +231,8 @@ const MembershipRefund = () => {
                 <ClockIcon className="w-6 h-6 text-yellow-600" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500">Waiting Period</p>
-                <p className="text-2xl font-bold text-yellow-600">{ineligibleMembers.length}</p>
+                <p className="text-sm font-medium text-gray-500">Pending (Under 5 Years)</p>
+                <p className="text-2xl font-bold text-yellow-600">{pendingMembers.length}</p>
               </div>
             </div>
           </div>
@@ -226,8 +243,8 @@ const MembershipRefund = () => {
                 <RefundIcon className="w-6 h-6 text-blue-600" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500">Refunded</p>
-                <p className="text-2xl font-bold text-blue-600">{refundedMembers.length}</p>
+                <p className="text-sm font-medium text-gray-500">Settled</p>
+                <p className="text-2xl font-bold text-blue-600">{settledMembers.length}</p>
               </div>
             </div>
           </div>
@@ -239,12 +256,12 @@ const MembershipRefund = () => {
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Eligible Members */}
+            {/* Eligible Members (Completed 5 Years) */}
             {eligibleMembers.length > 0 && (
               <div className="bg-white shadow-sm rounded-lg border border-amber-200 overflow-hidden">
                 <div className="px-6 py-4 border-b border-amber-200 bg-green-50">
                   <h2 className="text-lg font-semibold text-green-800">Eligible for Refund (₹10,000 each)</h2>
-                  <p className="text-sm text-green-600">Members who have completed 1 year and can request refund</p>
+                  <p className="text-sm text-green-600">Members who have completed 5 years</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-amber-100 text-sm">
@@ -253,7 +270,7 @@ const MembershipRefund = () => {
                         <th className="px-6 py-3 text-left font-semibold text-slate-700">Member</th>
                         <th className="px-6 py-3 text-left font-semibold text-slate-700">Membership ID</th>
                         <th className="px-6 py-3 text-left font-semibold text-slate-700">Joining Date</th>
-                        <th className="px-6 py-3 text-left font-semibold text-slate-700">Days Since Joining</th>
+                        <th className="px-6 py-3 text-left font-semibold text-slate-700">Years Since Joining</th>
                         <th className="px-6 py-3 text-left font-semibold text-slate-700">Actions</th>
                       </tr>
                     </thead>
@@ -273,20 +290,17 @@ const MembershipRefund = () => {
                               'N/A'
                             }
                           </td>
-                          <td className="px-6 py-4 text-gray-700">
-                            {member.payment?.dateOfJoining ? 
-                              Math.floor((new Date() - new Date(member.payment.dateOfJoining)) / (1000 * 60 * 60 * 24)) + ' days' : 
-                              'N/A'
-                            }
+                          <td className="px-6 py-4 text-gray-700 font-medium">
+                            {getYearsSinceJoining(member)} years
                           </td>
                           <td className="px-6 py-4">
                             <button
-                              onClick={() => handleProcessRefund(member)}
+                              onClick={() => handleSettleRefund(member)}
                               disabled={processingRefund}
-                              className="inline-flex items-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-lg text-sm font-medium"
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-lg text-sm font-medium shadow-sm"
                             >
-                              <RefundIcon />
-                              {processingRefund ? 'Processing...' : 'Process Refund'}
+                              <CheckIcon />
+                              {processingRefund ? 'Processing...' : 'Settle'}
                             </button>
                           </td>
                         </tr>
@@ -297,12 +311,12 @@ const MembershipRefund = () => {
               </div>
             )}
 
-            {/* Ineligible Members */}
-            {ineligibleMembers.length > 0 && (
+            {/* Pending Members (Under 5 Years) */}
+            {pendingMembers.length > 0 && (
               <div className="bg-white shadow-sm rounded-lg border border-amber-200 overflow-hidden">
                 <div className="px-6 py-4 border-b border-amber-200 bg-yellow-50">
-                  <h2 className="text-lg font-semibold text-yellow-800">Waiting Period</h2>
-                  <p className="text-sm text-yellow-600">Members who haven't completed 1 year yet</p>
+                  <h2 className="text-lg font-semibold text-yellow-800">Pending Members (Under 5 Years)</h2>
+                  <p className="text-sm text-yellow-600">Members who haven't completed 5 years yet - can still be settled manually</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-amber-100 text-sm">
@@ -311,11 +325,13 @@ const MembershipRefund = () => {
                         <th className="px-6 py-3 text-left font-semibold text-slate-700">Member</th>
                         <th className="px-6 py-3 text-left font-semibold text-slate-700">Membership ID</th>
                         <th className="px-6 py-3 text-left font-semibold text-slate-700">Joining Date</th>
-                        <th className="px-6 py-3 text-left font-semibold text-slate-700">Days Until Eligible</th>
+                        <th className="px-6 py-3 text-left font-semibold text-slate-700">Years Since Joining</th>
+                        <th className="px-6 py-3 text-left font-semibold text-slate-700">Days Until 5 Years</th>
+                        <th className="px-6 py-3 text-left font-semibold text-slate-700">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-amber-100">
-                      {ineligibleMembers.map((member) => (
+                      {pendingMembers.map((member) => (
                         <tr key={member.id} className="hover:bg-amber-50">
                           <td className="px-6 py-4">
                             <div>
@@ -330,11 +346,24 @@ const MembershipRefund = () => {
                               'N/A'
                             }
                           </td>
+                          <td className="px-6 py-4 text-gray-700 font-medium">
+                            {getYearsSinceJoining(member)} years
+                          </td>
                           <td className="px-6 py-4 text-gray-700">
                             {getDaysUntilEligible(member) !== null ? 
                               `${getDaysUntilEligible(member)} days` : 
                               'N/A'
                             }
+                          </td>
+                          <td className="px-6 py-4">
+                            <button
+                              onClick={() => handleSettleRefund(member)}
+                              disabled={processingRefund}
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white rounded-lg text-sm font-medium shadow-sm"
+                            >
+                              <CheckIcon />
+                              {processingRefund ? 'Processing...' : 'Settle'}
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -344,12 +373,12 @@ const MembershipRefund = () => {
               </div>
             )}
 
-            {/* Refunded Members */}
-            {refundedMembers.length > 0 && (
+            {/* Settled Members */}
+            {settledMembers.length > 0 && (
               <div className="bg-white shadow-sm rounded-lg border border-amber-200 overflow-hidden">
                 <div className="px-6 py-4 border-b border-amber-200 bg-blue-50">
-                  <h2 className="text-lg font-semibold text-blue-800">Refunded Members</h2>
-                  <p className="text-sm text-blue-600">Members who have already received their refund</p>
+                  <h2 className="text-lg font-semibold text-blue-800">Settled Members</h2>
+                  <p className="text-sm text-blue-600">Members whose refunds have been settled</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-amber-100 text-sm">
@@ -358,12 +387,13 @@ const MembershipRefund = () => {
                         <th className="px-6 py-3 text-left font-semibold text-slate-700">Member</th>
                         <th className="px-6 py-3 text-left font-semibold text-slate-700">Membership ID</th>
                         <th className="px-6 py-3 text-left font-semibold text-slate-700">Joining Date</th>
-                        <th className="px-6 py-3 text-left font-semibold text-slate-700">Refund Date</th>
+                        <th className="px-6 py-3 text-left font-semibold text-slate-700">Settled Date</th>
                         <th className="px-6 py-3 text-left font-semibold text-slate-700">Refund Amount</th>
+                        <th className="px-6 py-3 text-left font-semibold text-slate-700">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-amber-100">
-                      {refundedMembers.map((member) => (
+                      {settledMembers.map((member) => (
                         <tr key={member.id} className="hover:bg-amber-50">
                           <td className="px-6 py-4">
                             <div>
@@ -386,6 +416,15 @@ const MembershipRefund = () => {
                           </td>
                           <td className="px-6 py-4 font-semibold text-green-600">
                             ₹{member.payment?.refundAmount?.toFixed(2) || '0.00'}
+                          </td>
+                          <td className="px-6 py-4">
+                            <button
+                              disabled
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-800 rounded-lg text-sm font-medium cursor-not-allowed"
+                            >
+                              <CheckIcon />
+                              Settled
+                            </button>
                           </td>
                         </tr>
                       ))}

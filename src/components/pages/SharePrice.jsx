@@ -46,7 +46,6 @@ const SharePrice = () => {
 
   // Financial Indicators section state (moved from Financial.jsx)
   const [fiUpdatedPrice, setFiUpdatedPrice] = useState('');
-  const [fiDividend, setFiDividend] = useState('');
 
   useEffect(() => {
     const fetchSharePrices = async () => {
@@ -94,8 +93,6 @@ const SharePrice = () => {
     const existing = sharePrices.find(sp => sp.year === year && sp.month === month);
     const present = existing?.price ? existing.price.toString() : '';
     setFiUpdatedPrice(present);
-    // Best effort: if table has dividend_per_share, prefill; else leave blank
-    setFiDividend(existing?.dividend_per_share ? String(existing.dividend_per_share) : '');
   }, [year, month, sharePrices]);
 
   const handleAddSharePrice = async (e) => {
@@ -112,13 +109,28 @@ const SharePrice = () => {
         return;
       }
 
+      // Generate quarter string based on month for backward compatibility
+      const getQuarterFromMonth = (monthName) => {
+        const monthIndex = months.indexOf(monthName);
+        if (monthIndex === -1) return `${monthName}-${year}`;
+        
+        const quarterStartMonth = Math.floor(monthIndex / 3) * 3;
+        const quarterEndMonth = quarterStartMonth + 2;
+        const startMonthName = months[quarterStartMonth];
+        const endMonthName = months[quarterEndMonth];
+        
+        return `${startMonthName}-${endMonthName}-${year}`;
+      };
+
+      const quarter = getQuarterFromMonth(month);
+
       const { error } = await supabase
         .from('share_prices')
         .insert({
           year: parseInt(year),
           month,
+          quarter: quarter,
           price: parseFloat(price),
-          dividend_per_share: fiDividend ? parseFloat(fiDividend) : null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
@@ -128,6 +140,7 @@ const SharePrice = () => {
         alert('Error adding share price: ' + error.message);
       } else {
         setPrice('');
+        alert('✅ Share price added successfully!');
       }
     } catch (err) {
       console.error('Error adding share price:', err);
@@ -140,18 +153,34 @@ const SharePrice = () => {
     if (!year || !month) return;
     setLoading(true);
     try {
+      // Generate quarter string based on month for backward compatibility
+      const getQuarterFromMonth = (monthName, yearNum) => {
+        const monthIndex = months.indexOf(monthName);
+        if (monthIndex === -1) return `${monthName}-${yearNum}`;
+        
+        const quarterStartMonth = Math.floor(monthIndex / 3) * 3;
+        const quarterEndMonth = quarterStartMonth + 2;
+        const startMonthName = months[quarterStartMonth];
+        const endMonthName = months[quarterEndMonth];
+        
+        return `${startMonthName}-${endMonthName}-${yearNum}`;
+      };
+
+      const quarter = getQuarterFromMonth(month, year);
+      
       const existing = sharePrices.find(sp => sp.year === year && sp.month === month);
       if (existing) {
         const { error } = await supabase
           .from('share_prices')
           .update({
             price: fiUpdatedPrice ? parseFloat(fiUpdatedPrice) : existing.price,
-            dividend_per_share: fiDividend ? parseFloat(fiDividend) : null,
             updated_at: new Date().toISOString()
           })
           .eq('id', existing.id);
         if (error) {
-          alert('Error saving financial indicators: ' + error.message);
+          alert('Error updating share price: ' + error.message);
+        } else {
+          alert('✅ Share price updated successfully!');
         }
       } else {
         const { error } = await supabase
@@ -159,17 +188,19 @@ const SharePrice = () => {
           .insert({
             year: parseInt(year),
             month,
+            quarter: quarter,
             price: fiUpdatedPrice ? parseFloat(fiUpdatedPrice) : 0,
-            dividend_per_share: fiDividend ? parseFloat(fiDividend) : null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           });
         if (error) {
-          alert('Error saving financial indicators: ' + error.message);
+          alert('Error creating share price: ' + error.message);
+        } else {
+          alert('✅ Share price created successfully!');
         }
       }
     } catch (e) {
-      alert('Error saving financial indicators');
+      alert('Error saving share price');
     }
     setLoading(false);
   };
@@ -254,7 +285,7 @@ const SharePrice = () => {
               </button>
               <div>
                 <h1 className="text-xl font-bold text-gray-900">Monthly Share Price</h1>
-                <p className="text-sm text-gray-500">Manage share prices by month and year</p>
+                <p className="text-sm text-gray-500">Set and manage share prices for each month</p>
               </div>
             </div>
 
@@ -270,21 +301,22 @@ const SharePrice = () => {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Financial Indicators Section */}
+        {/* Update Existing Month Section */}
         <div className="bg-white shadow-sm rounded-lg border border-amber-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Financial Indicators</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Update Existing Month Price</h2>
+          <p className="text-sm text-gray-600 mb-4">Select a month to view or update its share price</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Present Share Price</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Current Share Price</label>
               <input
                 type="text"
-                value={(sharePrices.find(sp => sp.year === year && sp.month === month)?.price ?? '') === '' ? '' : `₹${(sharePrices.find(sp => sp.year === year && sp.month === month)?.price || 0).toFixed(2)}`}
-                className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm bg-amber-50"
+                value={(sharePrices.find(sp => sp.year === year && sp.month === month)?.price ?? '') === '' ? 'Not Set' : `₹${(sharePrices.find(sp => sp.year === year && sp.month === month)?.price || 0).toFixed(2)}`}
+                className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm bg-amber-50 font-semibold"
                 readOnly
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Updated Share Price</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Updated Share Price (₹)</label>
               <input
                 type="number"
                 step="0.01"
@@ -292,36 +324,25 @@ const SharePrice = () => {
                 value={fiUpdatedPrice}
                 onChange={(e) => setFiUpdatedPrice(e.target.value)}
                 className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm"
-                placeholder="Enter updated share price"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Dividend Per Share</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={fiDividend}
-                onChange={(e) => setFiDividend(e.target.value)}
-                className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm"
-                placeholder="Enter dividend per share"
+                placeholder="Enter new share price"
               />
             </div>
           </div>
           <div className="flex justify-end">
             <button
               onClick={handleSaveFinancial}
-              disabled={loading}
+              disabled={loading || !fiUpdatedPrice}
               className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white rounded-lg font-medium text-sm shadow-sm"
             >
               <SaveIcon />
-              {loading ? 'Saving...' : 'Save Indicators'}
+              {loading ? 'Saving...' : 'Update Price'}
             </button>
           </div>
         </div>
         {/* Add New Share Price Form */}
         <div className="bg-white shadow-sm rounded-lg border border-amber-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Add New Share Price</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Add New Monthly Share Price</h2>
+          <p className="text-sm text-gray-600 mb-4">Set share price for a specific month and year</p>
           <form onSubmit={handleAddSharePrice} className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>

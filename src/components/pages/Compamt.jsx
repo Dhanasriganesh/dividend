@@ -200,39 +200,21 @@ function Compamt() {
       const yr = now.getFullYear();
       const mon = now.toLocaleString('default', { month: 'short' });
 
-      // Get quarter from current month (rolling 3-month quarters)
-      const getQuarterFromMonth = (month, year) => {
-        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        const monthIndex = months.indexOf(month);
-        if (monthIndex === -1) return null;
-        
-        // Calculate the quarter start month (every 3 months: 0, 3, 6, 9)
-        const quarterStartMonth = Math.floor(monthIndex / 3) * 3;
-        const quarterEndMonth = quarterStartMonth + 2;
-        
-        const startMonthName = months[quarterStartMonth];
-        const endMonthName = months[quarterEndMonth];
-        
-        return `${startMonthName}-${endMonthName}-${year}`;
-      };
-      
-      const quarter = getQuarterFromMonth(mon, yr);
-      
-      // Fetch current share price for this quarter
+      // Fetch current month's share price
       const { data: priceRow, error: priceErr } = await supabase
         .from('share_prices')
         .select('price')
         .eq('year', yr)
-        .eq('quarter', quarter)
+        .eq('month', mon)
         .single();
       if (priceErr) {
-        alert('Share price not available for current quarter.');
+        alert(`Share price not available for ${mon} ${yr}.`);
         setInvesting(false);
         return;
       }
       const price = priceRow?.price ? parseFloat(priceRow.price) : 0;
       if (!(price > 0)) {
-        alert('Share price not set for current quarter.');
+        alert(`Share price not set for ${mon} ${yr}.`);
         setInvesting(false);
         return;
       }

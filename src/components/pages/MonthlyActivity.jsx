@@ -83,35 +83,20 @@ function MonthlyActivity() {
     return () => { sub.unsubscribe(); };
   }, [id, year, month]);
 
-  // Fetch current quarter's share price
+  // Fetch current month's share price
   useEffect(() => {
     const fetchSharePrice = async () => {
       if (!year || !month) return;
       
       setLoadingSharePrice(true);
       try {
-        // Get quarter from month (rolling 3-month quarters)
-        const getQuarterFromMonth = (month, year) => {
-          const monthIndex = months.indexOf(month);
-          if (monthIndex === -1) return null;
-          
-          // Calculate the quarter start month (every 3 months: 0, 3, 6, 9)
-          const quarterStartMonth = Math.floor(monthIndex / 3) * 3;
-          const quarterEndMonth = quarterStartMonth + 2;
-          
-          const startMonthName = months[quarterStartMonth];
-          const endMonthName = months[quarterEndMonth];
-          
-          return `${startMonthName}-${endMonthName}-${year}`;
-        };
-        
-        const quarter = getQuarterFromMonth(month, parseInt(year));
         const { data, error } = await supabase
           .from('share_prices')
           .select('*')
           .eq('year', parseInt(year))
-          .eq('quarter', quarter)
+          .eq('month', month)
           .single();
+        
         if (!error && data) {
           setCurrentSharePrice(data.price);
         } else {
@@ -501,7 +486,7 @@ function MonthlyActivity() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Current Share price</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Current Share price for {month} {year}</label>
                     <input 
                       type="text" 
                       value={loadingSharePrice ? 'Loading...' : (currentSharePrice ? `₹${currentSharePrice.toFixed(2)}` : 'No price set')} 
@@ -511,7 +496,7 @@ function MonthlyActivity() {
                       disabled={loadingSharePrice || currentSharePrice !== null || loadingMember || !isEditablePeriod}
                     />
                     {!currentSharePrice && !loadingSharePrice && (
-                      <p className="text-xs text-red-600 mt-1">⚠️ Share price must be set for this quarter before recording investments</p>
+                      <p className="text-xs text-red-600 mt-1">⚠️ Share price must be set for {month} {year} before recording investments</p>
                     )}
                   </div>
                   <div>
@@ -545,7 +530,7 @@ function MonthlyActivity() {
               <h3 className="text-sm font-semibold text-slate-700">Withdrawal</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Present share price</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Present share price for {month} {year}</label>
                   <input 
                     type="text" 
                     value={loadingSharePrice ? 'Loading...' : (currentSharePrice ? `₹${currentSharePrice.toFixed(2)}` : 'No price set')} 
@@ -554,7 +539,7 @@ function MonthlyActivity() {
                     placeholder="—" 
                   />
                   {!currentSharePrice && !loadingSharePrice && (
-                    <p className="text-xs text-red-600 mt-1">⚠️ Share price must be set for this quarter before processing withdrawals</p>
+                    <p className="text-xs text-red-600 mt-1">⚠️ Share price must be set for {month} {year} before processing withdrawals</p>
                   )}
                 </div>
                 <div>
