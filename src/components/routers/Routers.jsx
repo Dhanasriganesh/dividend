@@ -14,6 +14,7 @@ import Members from '../pages/Members';
 import MembershipRefund from '../pages/MembershipRefund';
 import Reports from '../pages/Reports';
 import Dividend from '../pages/Dividend';
+import Reminders from '../pages/Reminders';
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
   const { currentUser } = useAuth();
@@ -123,6 +124,14 @@ function Routers() {
         element={
           <ProtectedRoute>
             <Reports />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reminders"
+        element={
+          <ProtectedRoute>
+            <Reminders />
           </ProtectedRoute>
         }
       />

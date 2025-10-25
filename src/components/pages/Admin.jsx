@@ -494,6 +494,25 @@ const Admin = () => {
             </button>
           )}
 
+          {/* Reminders Tile */}
+          {hasTileAccess(TILE_PERMISSIONS.MEMBERS) && (
+            <button
+              onClick={() => navigate('/reminders')}
+              className="group relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-amber-600 font-medium">Management</p>
+                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Reminders</h3>
+                  <p className="mt-1 text-sm text-gray-500">Insurance expiry & interest lists</p>
+                </div>
+                <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
+                  🔔
+                </div>
+              </div>
+            </button>
+          )}
+
 
 
           {/* Download Report Tile */}

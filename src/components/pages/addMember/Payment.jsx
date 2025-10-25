@@ -96,7 +96,7 @@ const Payment = () => {
           rows.forEach(r => {
             const membershipId = r?.payment?.membershipId;
             if (membershipId) {
-              const match = membershipId.match(/^(\d{4})-(\d{3})$/);
+              const match = membershipId.match(/^(\d{4})-(\d{4})$/);
               if (match) {
                 const idYear = parseInt(match[1]);
                 const idNumber = parseInt(match[2]);
@@ -111,8 +111,8 @@ const Payment = () => {
         // Generate the next sequential number for this year
         const nextNumber = maxNumberForYear + 1;
         
-        // Format: YYYY-XXX (e.g., 2025-001, 2025-002, 2026-001, etc.)
-        const membershipId = `${year}-${nextNumber.toString().padStart(3, '0')}`;
+        // Format: YYYY-XXXX (e.g., 2025-0001, 2025-0002, 2026-0001, etc.)
+        const membershipId = `${year}-${nextNumber.toString().padStart(4, '0')}`;
         
         setFormData(prev => ({
           ...prev,
@@ -125,7 +125,7 @@ const Payment = () => {
         const joiningDate = new Date(formData.dateOfJoining);
         const year = joiningDate.getFullYear();
         const timestamp = Date.now();
-        const fallbackId = `${year}-${timestamp.toString().slice(-3)}`;
+        const fallbackId = `${year}-${timestamp.toString().slice(-4)}`;
         
         setFormData(prev => ({
           ...prev,
@@ -472,7 +472,7 @@ const Payment = () => {
                   className="w-full px-3 py-2 border border-yellow-300 rounded-lg transition focus:ring-2 focus:ring-yellow-200 outline-none"
                   placeholder="Auto-generated or enter manually"
                 />
-                <p className="text-xs text-gray-500 mt-1">You can edit this ID if needed. If left empty, it will auto-generate in format YYYY-XXX (e.g., 2025-001).</p>
+                <p className="text-xs text-gray-500 mt-1">You can edit this ID if needed. If left empty, it will auto-generate in format YYYY-XXXX (e.g., 2025-0001).</p>
               </div>
             </div>
           </div>

@@ -70,6 +70,10 @@ const MembershipRefund = () => {
     return new Date() >= fiveYearsLater;
   };
 
+  const isLeavingCompany = (member) => {
+    return member.payment?.leavingCompany === true;
+  };
+
   const getDaysUntilEligible = (member) => {
     if (!member.payment?.dateOfJoining) return null;
     
@@ -97,11 +101,44 @@ const MembershipRefund = () => {
     return member.payment?.membershipRefunded === true;
   };
 
+  const handleMarkLeaving = async (member) => {
+    const yearsSinceJoining = getYearsSinceJoining(member);
+    const confirmMessage = `Mark ${member.name} as leaving the company?\n\nThis will make them eligible for membership refund of ₹10,000.\n\nYears since joining: ${yearsSinceJoining}`;
+    
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setProcessingRefund(true);
+    try {
+      // Update member record to mark as leaving company
+      const { error: updateError } = await supabase
+        .from('members')
+        .update({
+          payment: {
+            ...member.payment,
+            leavingCompany: true,
+            leavingDate: new Date().toISOString()
+          }
+        })
+        .eq('id', member.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      alert(`✅ Member marked as leaving company!\n\nMember: ${member.name}\nThey are now eligible for membership refund.`);
+      fetchMembers(); // Refresh the list
+    } catch (error) {
+      console.error('Error marking member as leaving:', error);
+      alert('❌ Error marking member as leaving: ' + error.message);
+    }
+    setProcessingRefund(false);
+  };
+
   const handleSettleRefund = async (member) => {
     const yearsSinceJoining = getYearsSinceJoining(member);
-    const confirmMessage = yearsSinceJoining >= 5 
-      ? `Settle refund of ₹10,000 for ${member.name}?\n\nMember has completed ${yearsSinceJoining} years and is eligible for refund.`
-      : `Settle refund of ₹10,000 for ${member.name}?\n\nNote: Member has only completed ${yearsSinceJoining} years (less than 5 years). Are you sure you want to settle now?`;
+    const confirmMessage = `Settle membership refund of ₹10,000 for ${member.name}?\n\nThis member is leaving the company and is eligible for refund.\n\nYears since joining: ${yearsSinceJoining}`;
     
     if (!window.confirm(confirmMessage)) {
       return;
@@ -117,8 +154,7 @@ const MembershipRefund = () => {
             ...member.payment,
             membershipRefunded: true,
             refundDate: new Date().toISOString(),
-            refundAmount: 10000,
-            settledEarly: yearsSinceJoining < 5
+            refundAmount: 10000
           }
         })
         .eq('id', member.id);
@@ -143,7 +179,7 @@ const MembershipRefund = () => {
           share_price: 0,
           shares: 0,
           created_at: new Date().toISOString(),
-          description: `Membership refund settled for ${member.name} - ${yearsSinceJoining} years after joining`
+          description: `Membership refund settled for ${member.name} - leaving company after ${yearsSinceJoining} years`
         });
 
       if (txError) {
@@ -168,15 +204,19 @@ const MembershipRefund = () => {
     }
   };
 
-  // Separate members into three categories
+  // Separate members into four categories
   const settledMembers = members.filter(member => hasRefunded(member));
   
+  const leavingMembers = members.filter(member => 
+    isLeavingCompany(member) && !hasRefunded(member)
+  );
+
   const eligibleMembers = members.filter(member => 
-    isEligibleForRefund(member) && !hasRefunded(member)
+    isEligibleForRefund(member) && !isLeavingCompany(member) && !hasRefunded(member)
   );
 
   const pendingMembers = members.filter(member => 
-    !isEligibleForRefund(member) && !hasRefunded(member)
+    !isEligibleForRefund(member) && !isLeavingCompany(member) && !hasRefunded(member)
   );
 
   return (
@@ -195,7 +235,7 @@ const MembershipRefund = () => {
               </button>
               <div>
                 <h1 className="text-xl font-bold text-gray-900">Membership Refund Management</h1>
-                <p className="text-sm text-gray-500">Process membership refunds (Eligible after 5 years, can settle anytime)</p>
+                <p className="text-sm text-gray-500">Process membership refunds (Refund only when member leaves company)</p>
               </div>
             </div>
 
@@ -212,14 +252,26 @@ const MembershipRefund = () => {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+          <div className="bg-white shadow-sm rounded-lg border border-amber-200 p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-red-50 rounded-lg">
+                <RefundIcon className="w-6 h-6 text-red-600" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Leaving Company</p>
+                <p className="text-2xl font-bold text-red-600">{leavingMembers.length}</p>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-white shadow-sm rounded-lg border border-amber-200 p-6">
             <div className="flex items-center">
               <div className="p-2 bg-green-50 rounded-lg">
                 <CheckIcon className="w-6 h-6 text-green-600" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500">Eligible for Refund</p>
+                <p className="text-sm font-medium text-gray-500">Eligible (5+ Years)</p>
                 <p className="text-2xl font-bold text-green-600">{eligibleMembers.length}</p>
               </div>
             </div>
@@ -240,7 +292,7 @@ const MembershipRefund = () => {
           <div className="bg-white shadow-sm rounded-lg border border-amber-200 p-6">
             <div className="flex items-center">
               <div className="p-2 bg-blue-50 rounded-lg">
-                <RefundIcon className="w-6 h-6 text-blue-600" />
+                <CheckIcon className="w-6 h-6 text-blue-600" />
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-500">Settled</p>
@@ -256,12 +308,74 @@ const MembershipRefund = () => {
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Eligible Members (Completed 5 Years) */}
+            {/* Members Leaving Company */}
+            {leavingMembers.length > 0 && (
+              <div className="bg-white shadow-sm rounded-lg border border-amber-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-amber-200 bg-red-50">
+                  <h2 className="text-lg font-semibold text-red-800">Members Leaving Company (₹10,000 refund)</h2>
+                  <p className="text-sm text-red-600">These members are leaving and eligible for membership refund</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-amber-100 text-sm">
+                    <thead className="bg-amber-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left font-semibold text-slate-700">Member</th>
+                        <th className="px-6 py-3 text-left font-semibold text-slate-700">Membership ID</th>
+                        <th className="px-6 py-3 text-left font-semibold text-slate-700">Joining Date</th>
+                        <th className="px-6 py-3 text-left font-semibold text-slate-700">Years Since Joining</th>
+                        <th className="px-6 py-3 text-left font-semibold text-slate-700">Leaving Date</th>
+                        <th className="px-6 py-3 text-left font-semibold text-slate-700">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-amber-100">
+                      {leavingMembers.map((member) => (
+                        <tr key={member.id} className="hover:bg-amber-50">
+                          <td className="px-6 py-4">
+                            <div>
+                              <div className="font-medium text-gray-900">{member.name}</div>
+                              <div className="text-gray-500">{member.phone_no}</div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-gray-700">{member.payment?.membershipId || 'N/A'}</td>
+                          <td className="px-6 py-4 text-gray-700">
+                            {member.payment?.dateOfJoining ? 
+                              new Date(member.payment.dateOfJoining).toLocaleDateString() : 
+                              'N/A'
+                            }
+                          </td>
+                          <td className="px-6 py-4 text-gray-700 font-medium">
+                            {getYearsSinceJoining(member)} years
+                          </td>
+                          <td className="px-6 py-4 text-gray-700">
+                            {member.payment?.leavingDate ? 
+                              new Date(member.payment.leavingDate).toLocaleDateString() : 
+                              'N/A'
+                            }
+                          </td>
+                          <td className="px-6 py-4">
+                            <button
+                              onClick={() => handleSettleRefund(member)}
+                              disabled={processingRefund}
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg text-sm font-medium shadow-sm"
+                            >
+                              <CheckIcon />
+                              {processingRefund ? 'Processing...' : 'Settle Refund'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Eligible Members (Completed 5 Years but staying) */}
             {eligibleMembers.length > 0 && (
               <div className="bg-white shadow-sm rounded-lg border border-amber-200 overflow-hidden">
                 <div className="px-6 py-4 border-b border-amber-200 bg-green-50">
-                  <h2 className="text-lg font-semibold text-green-800">Eligible for Refund (₹10,000 each)</h2>
-                  <p className="text-sm text-green-600">Members who have completed 5 years</p>
+                  <h2 className="text-lg font-semibold text-green-800">Eligible Members (5+ Years, Still Active)</h2>
+                  <p className="text-sm text-green-600">Members who have completed 5 years but are still with the company</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-amber-100 text-sm">
@@ -295,12 +409,12 @@ const MembershipRefund = () => {
                           </td>
                           <td className="px-6 py-4">
                             <button
-                              onClick={() => handleSettleRefund(member)}
+                              onClick={() => handleMarkLeaving(member)}
                               disabled={processingRefund}
-                              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-lg text-sm font-medium shadow-sm"
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white rounded-lg text-sm font-medium shadow-sm"
                             >
-                              <CheckIcon />
-                              {processingRefund ? 'Processing...' : 'Settle'}
+                              <RefundIcon />
+                              {processingRefund ? 'Processing...' : 'Mark as Leaving'}
                             </button>
                           </td>
                         </tr>
@@ -315,8 +429,8 @@ const MembershipRefund = () => {
             {pendingMembers.length > 0 && (
               <div className="bg-white shadow-sm rounded-lg border border-amber-200 overflow-hidden">
                 <div className="px-6 py-4 border-b border-amber-200 bg-yellow-50">
-                  <h2 className="text-lg font-semibold text-yellow-800">Pending Members (Under 5 Years)</h2>
-                  <p className="text-sm text-yellow-600">Members who haven't completed 5 years yet - can still be settled manually</p>
+                  <h2 className="text-lg font-semibold text-yellow-800">Active Members (Under 5 Years)</h2>
+                  <p className="text-sm text-yellow-600">Members who haven't completed 5 years yet - can be marked as leaving if they decide to leave</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-amber-100 text-sm">
@@ -357,12 +471,12 @@ const MembershipRefund = () => {
                           </td>
                           <td className="px-6 py-4">
                             <button
-                              onClick={() => handleSettleRefund(member)}
+                              onClick={() => handleMarkLeaving(member)}
                               disabled={processingRefund}
                               className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white rounded-lg text-sm font-medium shadow-sm"
                             >
-                              <CheckIcon />
-                              {processingRefund ? 'Processing...' : 'Settle'}
+                              <RefundIcon />
+                              {processingRefund ? 'Processing...' : 'Mark as Leaving'}
                             </button>
                           </td>
                         </tr>

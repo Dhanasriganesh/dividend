@@ -145,32 +145,43 @@ const Reports = () => {
       .single();
     
     const currentSharePrice = sharePriceData?.price || 30;
+    const dividendRate = 0.05; // 5% dividend rate
 
     const rows = members.map((member, index) => {
       const payment = member.payment || {};
       const totalShares = member.total_shares || 0;
       
+      // Calculate dividend amount
+      const dividendAmount = totalShares > 0 ? (totalShares * currentSharePrice * dividendRate) : 0;
+      
+      // Format member name (similar to the image format)
+      const memberDisplayName = `${payment.membershipId || ''} ${member.name || ''}`.trim();
+      
       return {
         'S. No.': index + 1,
-        'Member ID': payment.membershipId || '',
-        'Member Name': member.name || '',
-        'Phone': member.phoneNo || member.mobile || '',
-        'Date of Joining': payment.dateOfJoining || '',
-        'Total Shares': totalShares,
-        'Share Price (Current)': currentSharePrice,
-        'Total Value': totalShares * currentSharePrice,
-        'Investment Date': payment.dateOfJoining || '',
-        'Shares Allotment Date': payment.dateOfJoining || '',
-        'Dividend Eligibility': totalShares > 0 ? 'Eligible' : 'Not Eligible',
-        'Report Month': reportMonth,
-        'Report Year': reportYear
+        'MEMBER NAME': memberDisplayName,
+        'TOTAL NO.OF SHARES/ CUMMULATIVE SHARES': totalShares,
+        'DIVIDEND': dividendAmount.toFixed(2)
       };
     });
+
+    // Add summary row at the end
+    const totalShares = members.reduce((sum, member) => sum + (member.total_shares || 0), 0);
+    const totalDividend = totalShares * currentSharePrice * dividendRate;
+
+    const summaryRow = {
+      'S. No.': members.length + 1,
+      'MEMBER NAME': 'TOTAL COMPANY SUMMARY',
+      'TOTAL NO.OF SHARES/ CUMMULATIVE SHARES': totalShares,
+      'DIVIDEND': totalDividend.toFixed(2)
+    };
+
+    rows.push(summaryRow);
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Dividend Report');
-    XLSX.writeFile(workbook, `dividend_report_${reportYear}_${reportMonth}.xlsx`);
+    XLSX.writeFile(workbook, `admin-DIVIDEND REPORT WITH CUSTOM DATE OF SHARES ALLOTMENT BASIS_${reportYear}_${reportMonth}.xlsx`);
   };
 
   const generateConsolidatedReport = async () => {
@@ -195,8 +206,111 @@ const Reports = () => {
     
     const currentSharePrice = sharePriceData?.price || 30;
 
+    // Create PART-A MEMBERS CAPITAL section
+    const memberCapitalRows = members.map((member, index) => {
+      const payment = member.payment || {};
+      const totalShares = member.total_shares || 0;
+      const valuation = totalShares * currentSharePrice;
+      
+      // Format member name (similar to other reports)
+      const memberDisplayName = `${payment.membershipId || ''} ${member.name || ''}`.trim();
+
+      return {
+        'S. No.': index + 1,
+        'MEMBER NAME': memberDisplayName,
+        'PRESENT SHARE PRICE': currentSharePrice,
+        'TOTAL SHARES': totalShares,
+        'VALUATION': valuation
+      };
+    });
+
+    // Add summary row at the end
     const totalShares = members.reduce((sum, member) => sum + (member.total_shares || 0), 0);
-    const totalInvestment = members.reduce((sum, member) => {
+    const totalValuation = totalShares * currentSharePrice;
+
+    const summaryRow = {
+      'S. No.': members.length + 1,
+      'MEMBER NAME': 'TOTAL COMPANY SUMMARY',
+      'PRESENT SHARE PRICE': currentSharePrice,
+      'TOTAL SHARES': totalShares,
+      'VALUATION': totalValuation
+    };
+
+    memberCapitalRows.push(summaryRow);
+
+    const workbook = XLSX.utils.book_new();
+    
+    // PART-A MEMBERS CAPITAL sheet
+    const memberCapitalSheet = XLSX.utils.json_to_sheet(memberCapitalRows);
+    XLSX.utils.book_append_sheet(workbook, memberCapitalSheet, 'PART-A MEMBERS CAPITAL');
+    
+    XLSX.writeFile(workbook, `admin-CONSOLIDATED REPORT OF VALUATION OF THE COMPANY IN THE SHARES AND AMOUNT_${reportYear}_${reportMonth}.xlsx`);
+  };
+
+  const generateDirectorsReport = async () => {
+    // Get current share price for the selected year
+    const { data: sharePriceData, error: priceError } = await supabase
+      .from('share_prices')
+      .select('*')
+      .eq('year', reportYear)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (priceError) {
+      console.error('Error fetching share prices:', priceError);
+      return;
+    }
+    
+    // Get all members with their investment data
+    const { data: members, error: membersError } = await supabase
+      .from('members')
+      .select('*')
+      .not('payment', 'is', null);
+
+    if (membersError) {
+      console.error('Error fetching members:', membersError);
+      return;
+    }
+
+    const currentSharePrice = sharePriceData?.price || 30;
+
+    // Create member-wise directors report
+    const rows = members.map((member, index) => {
+      const payment = member.payment || {};
+      const totalShares = member.total_shares || 0;
+      
+      // Calculate pooled investment (excluding fines)
+      let pooledInvestment = 0;
+      const activities = member.activities || {};
+      Object.values(activities).forEach(yearData => {
+        Object.values(yearData || {}).forEach(monthData => {
+          const inv = monthData?.investment || (monthData?.type === 'investment' ? monthData : null);
+          if (inv) {
+            // Add investment amount but exclude fine amount
+            pooledInvestment += parseFloat(inv.amount || 0) || 0;
+            // Explicitly exclude fine: pooledInvestment += parseFloat(inv.fine || 0) || 0;
+          }
+        });
+      });
+
+      const valuation = totalShares * currentSharePrice;
+      
+      // Format member name with ID and name (similar to the image format)
+      const memberDisplayName = `${payment.membershipId || ''} ${member.name || ''}`.trim();
+
+      return {
+      'S. No.': index + 1,
+        'MEMBER NAME': memberDisplayName,
+        'POOLED INVESTMENT': pooledInvestment > 0 ? pooledInvestment : 'FETCH AMOUNT OF INVESTMENT EXCEPT FINE',
+        'PRESENT SHARE PRICE': currentSharePrice,
+        'TOTAL SHARES': totalShares,
+        'VALUATION': valuation
+      };
+    });
+
+    // Add summary row at the end
+    const totalPooledInvestment = members.reduce((sum, member) => {
       const activities = member.activities || {};
       let memberTotal = 0;
       Object.values(activities).forEach(yearData => {
@@ -210,55 +324,24 @@ const Reports = () => {
       return sum + memberTotal;
     }, 0);
 
-    const companyValuation = totalShares * currentSharePrice;
+    const totalShares = members.reduce((sum, member) => sum + (member.total_shares || 0), 0);
+    const totalValuation = totalShares * currentSharePrice;
 
-    const rows = [
-      {
-        'Report Type': 'COMPANY VALUATION REPORT',
-        'Total Members': members.length,
-        'Total Shares Outstanding': totalShares,
-        'Total Investment Amount': totalInvestment,
-        'Current Share Price': currentSharePrice,
-        'Company Valuation (Market Value)': companyValuation,
-        'Report Month': reportMonth,
-        'Report Year': reportYear,
-        'Report Date': new Date().toLocaleDateString()
-      }
-    ];
+    const summaryRow = {
+      'S. No.': members.length + 1,
+      'MEMBER NAME': 'TOTAL COMPANY SUMMARY',
+      'POOLED INVESTMENT': totalPooledInvestment,
+      'PRESENT SHARE PRICE': currentSharePrice,
+      'TOTAL SHARES': totalShares,
+      'VALUATION': totalValuation
+    };
 
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Company Valuation');
-    XLSX.writeFile(workbook, `company_valuation_report_${reportYear}_${reportMonth}.xlsx`);
-  };
-
-  const generateDirectorsReport = async () => {
-    // Filter share prices for the selected year
-    const { data: sharePrices, error: priceError } = await supabase
-      .from('share_prices')
-      .select('*')
-      .eq('year', reportYear)
-      .order('created_at', { ascending: false });
-
-    if (priceError) {
-      console.error('Error fetching share prices:', priceError);
-      return;
-    }
-    
-    const rows = sharePrices.map((price, index) => ({
-      'S. No.': index + 1,
-      'Year': price.year,
-      'Share Price': price.price,
-      'Valuation Date': price.created_at ? new Date(price.created_at).toLocaleDateString() : '',
-      'Status': index === 0 ? 'Latest' : 'Previous',
-      'Notes': 'Directors approved valuation',
-      'Report Month': reportMonth
-    }));
+    rows.push(summaryRow);
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Directors Report');
-    XLSX.writeFile(workbook, `directors_report_${reportYear}_${reportMonth}.xlsx`);
+    XLSX.writeFile(workbook, `admin-DIRECTORS REPORT FOR VALUTION OF THE COMPANY_${reportYear}_${reportMonth}.xlsx`);
   };
 
   const generateFetchAllDetailsReport = async () => {
@@ -266,60 +349,89 @@ const Reports = () => {
       .from('members')
       .select('*');
 
-    const { data: transactions, error: transError } = await supabase
-      .from('company_transactions')
-      .select('*');
-
     const { data: sharePrices, error: priceError } = await supabase
       .from('share_prices')
-      .select('*');
+      .select('*')
+      .eq('year', reportYear)
+      .order('created_at', { ascending: false });
 
-    if (membersError || transError || priceError) {
-      console.error('Error fetching data:', { membersError, transError, priceError });
+    if (membersError || priceError) {
+      console.error('Error fetching data:', { membersError, priceError });
       return;
     }
 
-    // Create multiple sheets for comprehensive report
+    const currentSharePrice = sharePrices[0]?.price || 30;
+    const dividendRate = 0.05; // 5% dividend rate
+
+    // Create comprehensive system report with all 19 columns
+    const allRows = [];
+    let sNo = 1;
+    let cumulativeAmount = 0;
+
+    members.forEach(member => {
+      const activities = member.activities || {};
+      const payment = member.payment || {};
+      
+      // Format member name with ID (similar to the image format)
+      const memberDisplayName = `${payment.membershipId || ''} ${member.name || ''}`.trim();
+
+      // Process all activities for the selected year
+      Object.keys(activities).forEach(year => {
+        if (parseInt(year) === reportYear) {
+          const yearData = activities[year];
+          months.forEach(month => {
+            const monthData = yearData[month];
+            const inv = monthData?.investment || (monthData?.type === 'investment' ? monthData : null);
+            
+            if (inv && parseFloat(inv.amount || 0) > 0) {
+              const investmentDate = inv.date ? new Date(inv.date).toLocaleDateString() : '';
+              const amount = parseFloat(inv.amount || 0) || 0;
+              const fineAmount = parseFloat(inv.fine || 0) || 0;
+              const newAllottedShares = parseFloat(inv.shares || 0) || 0;
+              
+              // Calculate cumulative amount (excluding fine)
+              cumulativeAmount += amount;
+              
+              // Calculate previous shares (total shares - new allotted shares)
+              const previousShares = (member.total_shares || 0) - newAllottedShares;
+              
+              // Calculate cumulative shares
+              const cumulativeShares = member.total_shares || 0;
+              
+              // Calculate dividend
+              const dividend = cumulativeShares * currentSharePrice * dividendRate;
+
+              allRows.push({
+                'S. No.': sNo++,
+                'Date': investmentDate,
+                'MEMBER NAME': memberDisplayName,
+                'SYSTEM RECEIPT': inv.systemReceipt || '',
+                'CUSTOM RECEIPT': inv.customReceipt || '',
+                'AMOUNT': amount,
+                'FINE AMOUNT': fineAmount,
+                'CUMMULATIVE AMOUNT': cumulativeAmount,
+                'SHARE PRICE': currentSharePrice,
+                'NEW ALLOTED SHARES': newAllottedShares,
+                'PREVIOUS SHARES': previousShares,
+                'CUMMULATIVE SHARES': cumulativeShares,
+                'DIVIDEND': dividend.toFixed(2),
+                'AUDIT V.NO': null, // Empty for physical audit
+                'AUDIT SIGN': null, // Empty for physical audit
+                'PASSBOOK Yes': null, // Empty for physical audit
+                'ENTRY SIGN': null, // Empty for physical audit
+                'DATE OF PBE': null, // Empty for physical audit
+                'MEMBER SIGN': null // Empty for physical audit
+              });
+            }
+          });
+        }
+      });
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(allRows);
     const workbook = XLSX.utils.book_new();
-
-    // Members sheet
-    const membersRows = members.map((member, index) => ({
-      'S. No.': index + 1,
-      'Member ID': member.payment?.membershipId || '',
-      'Name': member.name || '',
-      'Phone': member.phoneNo || member.mobile || '',
-      'Total Shares': member.total_shares || 0,
-      'Payment Status': member.payment?.paymentStatus || '',
-      'Created Date': member.createdAt ? new Date(member.createdAt).toLocaleDateString() : ''
-    }));
-
-    const membersSheet = XLSX.utils.json_to_sheet(membersRows);
-    XLSX.utils.book_append_sheet(workbook, membersSheet, 'All Members');
-
-    // Transactions sheet
-    const transRows = transactions.map((transaction, index) => ({
-      'S. No.': index + 1,
-      'Date': transaction.createdAt ? new Date(transaction.createdAt).toLocaleDateString() : '',
-      'Type': transaction.type,
-      'Amount': transaction.amount,
-      'Description': transaction.description
-    }));
-
-    const transSheet = XLSX.utils.json_to_sheet(transRows);
-    XLSX.utils.book_append_sheet(workbook, transSheet, 'All Transactions');
-
-    // Share prices sheet
-    const priceRows = sharePrices.map((price, index) => ({
-      'S. No.': index + 1,
-      'Year': price.year,
-      'Price': price.price,
-      'Date': price.created_at ? new Date(price.created_at).toLocaleDateString() : ''
-    }));
-
-    const priceSheet = XLSX.utils.json_to_sheet(priceRows);
-    XLSX.utils.book_append_sheet(workbook, priceSheet, 'Share Prices');
-
-    XLSX.writeFile(workbook, `all_details_report_${reportYear}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'System Report');
+    XLSX.writeFile(workbook, `1. STARTING POINTWHILE FUNDING TIME RECORDED DATA to fetch all the details in background_${reportYear}.xlsx`);
   };
 
   const generateConsolidatedSharesReport = async () => {
@@ -333,29 +445,36 @@ const Reports = () => {
       return;
     }
 
-    const totalCompanyShares = members.reduce((sum, m) => sum + (m.total_shares || 0), 0);
-
+    // Create simplified consolidated shares report
     const rows = members.map((member, index) => {
       const totalShares = member.total_shares || 0;
       const payment = member.payment || {};
       
+      // Format member name (similar to other reports)
+      const memberDisplayName = `${payment.membershipId || ''} ${member.name || ''}`.trim();
+      
       return {
         'S. No.': index + 1,
-        'Member ID': payment.membershipId || '',
-        'Member Name': member.name || '',
-        'Total Shares': totalShares,
-        'Share Percentage': totalShares > 0 ? `${((totalShares / totalCompanyShares) * 100).toFixed(2)}%` : '0%',
-        'Investment Status': totalShares > 0 ? 'Active' : 'No Investment',
-        'Report Month': reportMonth,
-        'Report Year': reportYear,
-        'Total Company Shares': totalCompanyShares
+        'MEMBER NAME': memberDisplayName,
+        'TOTAL SHARES': totalShares
       };
     });
 
+    // Add summary row at the end
+    const totalCompanyShares = members.reduce((sum, member) => sum + (member.total_shares || 0), 0);
+
+    const summaryRow = {
+      'S. No.': members.length + 1,
+      'MEMBER NAME': 'TOTAL COMPANY SUMMARY',
+      'TOTAL SHARES': totalCompanyShares
+    };
+
+    rows.push(summaryRow);
+
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Share Distribution');
-    XLSX.writeFile(workbook, `share_distribution_report_${reportYear}_${reportMonth}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Consolidated Shares Report');
+    XLSX.writeFile(workbook, `admin-REPORT OF CONSOLIDATED SHARES IN THE COMPANY_${reportYear}_${reportMonth}.xlsx`);
   };
 
   const generateTotalCompanyPooledReport = async () => {
@@ -364,33 +483,71 @@ const Reports = () => {
       return;
     }
 
-    const { data: transactions, error } = await supabase
-      .from('company_transactions')
+    // Get all members with their investment data
+    const { data: members, error: membersError } = await supabase
+      .from('members')
       .select('*')
-      .gte('created_at', customStartDate)
-      .lte('created_at', customEndDate);
+      .not('payment', 'is', null);
 
-    if (error) {
-      console.error('Error fetching transactions:', error);
+    if (membersError) {
+      console.error('Error fetching members:', membersError);
       return;
     }
 
-    const totalPooled = transactions.reduce((sum, trans) => sum + (parseFloat(trans.amount || 0) || 0), 0);
+    // Create member-wise pooled amount report
+    const rows = members.map((member, index) => {
+      const payment = member.payment || {};
+      
+      // Calculate total amount invested by member (excluding fines)
+      let totalAmountInvested = 0;
+      const activities = member.activities || {};
+      Object.values(activities).forEach(yearData => {
+        Object.values(yearData || {}).forEach(monthData => {
+          const inv = monthData?.investment || (monthData?.type === 'investment' ? monthData : null);
+          if (inv) {
+            // Add investment amount but exclude fine amount
+            totalAmountInvested += parseFloat(inv.amount || 0) || 0;
+          }
+        });
+      });
+      
+      // Format member name (similar to other reports)
+      const memberDisplayName = `${payment.membershipId || ''} ${member.name || ''}`.trim();
 
-    const rows = [
-      {
-        'Report Period': `${customStartDate} to ${customEndDate}`,
-        'Total Company Pooled Amount': totalPooled,
-        'Number of Transactions': transactions.length,
-        'Average Transaction': transactions.length > 0 ? (totalPooled / transactions.length).toFixed(2) : 0,
-        'Report Generated': new Date().toLocaleDateString()
-      }
-    ];
+      return {
+        'S. No.': index + 1,
+        'MEMBER NAME': memberDisplayName,
+        'TOTAL AMOUNT INVESTED': totalAmountInvested
+      };
+    });
+
+    // Add summary row at the end
+    const totalPooledAmount = members.reduce((sum, member) => {
+      const activities = member.activities || {};
+      let memberTotal = 0;
+      Object.values(activities).forEach(yearData => {
+        Object.values(yearData || {}).forEach(monthData => {
+          const inv = monthData?.investment || (monthData?.type === 'investment' ? monthData : null);
+          if (inv) {
+            memberTotal += parseFloat(inv.amount || 0) || 0;
+          }
+        });
+      });
+      return sum + memberTotal;
+    }, 0);
+
+    const summaryRow = {
+      'S. No.': members.length + 1,
+      'MEMBER NAME': 'TOTAL COMPANY POOLED AMOUNT',
+      'TOTAL AMOUNT INVESTED': totalPooledAmount
+    };
+
+    rows.push(summaryRow);
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Company Pooled Amount');
-    XLSX.writeFile(workbook, `company_pooled_amount_${customStartDate}_to_${customEndDate}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Total Company Pooled Amount');
+    XLSX.writeFile(workbook, `admin-TOTAL COMPANY POOLED AMOUNT (FROM DATE TO TO DATE)_${customStartDate}_to_${customEndDate}.xlsx`);
   };
 
   const generateMonthlyFundingAuditReport = async () => {
@@ -407,30 +564,48 @@ const Reports = () => {
       return;
     }
 
-    const rows = members.map((member, index) => {
+    // Filter members with investments in the selected month
+    const membersWithInvestments = members.filter(member => {
       const activities = member.activities || {};
       const yearData = activities[reportYear] || activities[String(reportYear)] || {};
       const monthData = yearData[reportMonth] || {};
       const inv = monthData?.investment || (monthData?.type === 'investment' ? monthData : null);
+      return inv && parseFloat(inv.amount || 0) > 0;
+    });
+
+    // Create audit verification form rows
+    const rows = membersWithInvestments.map((member, index) => {
+      const activities = member.activities || {};
+      const yearData = activities[reportYear] || activities[String(reportYear)] || {};
+      const monthData = yearData[reportMonth] || {};
+      const inv = monthData?.investment || (monthData?.type === 'investment' ? monthData : null);
+      const payment = member.payment || {};
+      
+      // Format member name with ID (similar to the image format)
+      const memberDisplayName = `${payment.membershipId || ''} ${member.name || ''}`.trim();
+      
+      // Format date for the report
+      const reportDate = inv?.date || new Date().toLocaleDateString();
       
       return {
         'S. No.': index + 1,
-        'Member ID': member.payment?.membershipId || '',
-        'Member Name': member.name || '',
-        'Investment Amount': inv ? (parseFloat(inv.amount || 0) || 0) : 0,
-        'Fine Amount': inv ? (parseFloat(inv.fine || 0) || 0) : 0,
-        'Total Amount': inv ? ((parseFloat(inv.amount || 0) || 0) + (parseFloat(inv.fine || 0) || 0)) : 0,
-        'Receipt Number': inv?.customReceipt || '',
-        'Physical Verification': '',
-        'Audit Signature': '',
-        'Date of Verification': ''
+        'Date': reportDate,
+        'MEMBER NAME': memberDisplayName,
+        'RECEIPT': inv?.customReceipt || '',
+        'AMOUNT': inv ? (parseFloat(inv.amount || 0) || 0) : 0,
+        'AUDIT V.NO': null, // Completely empty for physical audit
+        'AUDIT SIGN': null, // Completely empty for physical audit
+        'PASSBOOK': null, // Completely empty for physical audit
+        'ENTRY SIGN': null, // Completely empty for physical audit
+        'DATE OF PBE': null, // Completely empty for physical audit
+        'MEMBER SIGN': null // Completely empty for physical audit
       };
     });
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Monthly Funding Audit');
-    XLSX.writeFile(workbook, `monthly_funding_audit_${reportYear}_${reportMonth}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Monthly Funding Physical Audit');
+    XLSX.writeFile(workbook, `employee-MONTHLY FUNDING PHYSICAL AUDIT VERIFIVATION FORM & REPORT_${reportYear}_${reportMonth}.xlsx`);
   };
 
   const generateNewSharesCurrentReport = async () => {
@@ -447,30 +622,63 @@ const Reports = () => {
       return;
     }
 
-    const currentMonthShares = members.reduce((sum, member) => {
+    // Get current share price
+    const { data: sharePriceData } = await supabase
+      .from('share_prices')
+      .select('price')
+      .eq('year', reportYear)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    
+    const currentSharePrice = sharePriceData?.price || 30;
+
+    // Filter members with investments in the selected month
+    const membersWithInvestments = members.filter(member => {
       const activities = member.activities || {};
       const yearData = activities[reportYear] || activities[String(reportYear)] || {};
       const monthData = yearData[reportMonth] || {};
       const inv = monthData?.investment || (monthData?.type === 'investment' ? monthData : null);
-      return sum + (inv ? (parseFloat(inv.shares || 0) || 0) : 0);
-    }, 0);
+      return inv && parseFloat(inv.amount || 0) > 0;
+    });
 
-    const cumulativeShares = members.reduce((sum, member) => sum + (member.total_shares || 0), 0);
-
-    const rows = [
-      {
-        'Report Month': `${reportMonth} ${reportYear}`,
-        'Current Month New Shares': currentMonthShares,
-        'Cumulative Total Shares': cumulativeShares,
-        'Previous Month Shares': cumulativeShares - currentMonthShares,
-        'Growth Rate': cumulativeShares > 0 ? `${((currentMonthShares / (cumulativeShares - currentMonthShares)) * 100).toFixed(2)}%` : '0%'
-      }
-    ];
+    // Create detailed shares report
+    const rows = membersWithInvestments.map((member, index) => {
+      const activities = member.activities || {};
+      const yearData = activities[reportYear] || activities[String(reportYear)] || {};
+      const monthData = yearData[reportMonth] || {};
+      const inv = monthData?.investment || (monthData?.type === 'investment' ? monthData : null);
+      const payment = member.payment || {};
+      
+      // Format member name with ID (similar to other reports)
+      const memberDisplayName = `${payment.membershipId || ''} ${member.name || ''}`.trim();
+      
+      // Calculate allotted shares for current month
+      const allottedShares = inv ? (parseFloat(inv.shares || 0) || 0) : 0;
+      
+      // Get cumulative shares (total shares)
+      const cumulativeShares = member.total_shares || 0;
+      
+      // Format date
+      const reportDate = inv?.date || new Date().toLocaleDateString();
+      
+      return {
+        'S. No.': index + 1,
+        'Date': reportDate,
+        'MEMBER NAME': memberDisplayName,
+        'SYSTEM RECEIPT': inv?.systemReceipt || '',
+        'CUSTOM RECEIPT': inv?.customReceipt || '',
+        'AMOUNT': inv ? (parseFloat(inv.amount || 0) || 0) : 0,
+        'SHARE PRICE': currentSharePrice,
+        'ALLOTED SHARES': allottedShares,
+        'CUMMULATIVE SHARES': cumulativeShares
+      };
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'New Shares Current');
-    XLSX.writeFile(workbook, `new_shares_current_${reportYear}_${reportMonth}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Current Month New Shares Report');
+    XLSX.writeFile(workbook, `employee-CURRENT MONTH ISSUED NEW SHARES & CUMMULATIVE SHARE REPORT_${reportYear}_${reportMonth}.xlsx`);
   };
 
   const generateNewSharesMonthwiseReport = async () => {
@@ -483,42 +691,60 @@ const Reports = () => {
       return;
     }
 
-    const monthwiseData = {};
+    // Get current share price
+    const { data: sharePriceData } = await supabase
+      .from('share_prices')
+      .select('price')
+      .eq('year', reportYear)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
     
-    // Initialize all months with 0
-    months.forEach(month => {
-      monthwiseData[month] = 0;
-    });
+    const currentSharePrice = sharePriceData?.price || 30;
 
-    // Calculate shares for each month
+    // Create detailed transaction-level report
+    const allRows = [];
+    let sNo = 1;
+
     members.forEach(member => {
       const activities = member.activities || {};
+      const payment = member.payment || {};
+      
+      // Format member name with ID (similar to other reports)
+      const memberDisplayName = `${payment.membershipId || ''} ${member.name || ''}`.trim();
+
       Object.keys(activities).forEach(year => {
         if (parseInt(year) === reportYear) {
           const yearData = activities[year];
           months.forEach(month => {
             const monthData = yearData[month];
             const inv = monthData?.investment || (monthData?.type === 'investment' ? monthData : null);
-            if (inv) {
-              monthwiseData[month] += (parseFloat(inv.shares || 0) || 0);
+            
+            if (inv && parseFloat(inv.shares || 0) > 0) {
+              const investmentDate = inv.date ? new Date(inv.date).toLocaleDateString() : '';
+              const allottedShares = parseFloat(inv.shares || 0) || 0;
+              const amount = parseFloat(inv.amount || 0) || 0;
+
+              allRows.push({
+                'S. No.': sNo++,
+                'Date': investmentDate,
+                'MEMBER NAME': memberDisplayName,
+                'SYSTEM RECEIPT': inv.systemReceipt || '',
+                'CUSTOM RECEIPT': inv.customReceipt || '',
+                'AMOUNT': amount,
+                'SHARE PRICE': currentSharePrice,
+                'ALLOTED SHARES': allottedShares
+              });
             }
           });
         }
       });
     });
 
-    const rows = months.map((month, index) => ({
-      'S. No.': index + 1,
-      'Month': month,
-      'Year': reportYear,
-      'New Shares Issued': monthwiseData[month],
-      'Cumulative Shares': months.slice(0, index + 1).reduce((sum, m) => sum + monthwiseData[m], 0)
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const worksheet = XLSX.utils.json_to_sheet(allRows);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'New Shares Monthwise');
-    XLSX.writeFile(workbook, `new_shares_monthwise_${reportYear}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'New Shares Month Wise');
+    XLSX.writeFile(workbook, `employee-ISSUED NEW SHARES MONTH WISE_${reportYear}.xlsx`);
   };
 
   return (
