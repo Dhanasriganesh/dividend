@@ -390,7 +390,7 @@ const Admin = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-amber-600 font-medium">Quick Access</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Company Account</h3>
+                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Company Own Account</h3>
                   <p className="mt-1 text-sm text-gray-500">Member-ID: 2025-002</p>
                 </div>
                 <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
@@ -427,7 +427,7 @@ const Admin = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-amber-600 font-medium">Donations</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Dividend Donation</h3>
+                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Dividend</h3>
                   <p className="mt-1 text-sm text-gray-500">Record and manage donations</p>
                 </div>
                 <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">

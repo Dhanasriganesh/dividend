@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../supabase/config';
+import jsPDF from 'jspdf';
 
 const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -15,12 +16,14 @@ function MonthlyActivity() {
   const [invFine, setInvFine] = useState('');
   const [invSharePrice, setInvSharePrice] = useState(''); // placeholder
   const [invCustomReceipt, setInvCustomReceipt] = useState('');
+  const [invManualReceipt, setInvManualReceipt] = useState('');
   const [calculatedShares, setCalculatedShares] = useState(0);
   const [saving, setSaving] = useState(false);
 
   // Withdrawal form state
   const [wdAmountToWithdraw, setWdAmountToWithdraw] = useState('');
   const [wdApproved, setWdApproved] = useState(false);
+  const [wdSharePrice, setWdSharePrice] = useState('');
 
   // Share price state
   const [currentSharePrice, setCurrentSharePrice] = useState(null);
@@ -30,6 +33,10 @@ function MonthlyActivity() {
   const [member, setMember] = useState(null);
   const [existingInvestment, setExistingInvestment] = useState(null);
   const [loadingMember, setLoadingMember] = useState(true);
+  const [isCompanyAccount, setIsCompanyAccount] = useState(false);
+  
+  // Report generation state
+  const [generatingReport, setGeneratingReport] = useState(false);
 
   const title = useMemo(() => {
     const monthIdx = Math.max(0, months.indexOf(month || ''));
@@ -60,6 +67,10 @@ function MonthlyActivity() {
         const memberData = data;
         setMember(memberData);
         
+        // Check if this is a company account
+        const isCompany = (memberData?.payment?.membershipId === "2025-002") || (memberData?.payment_membership_id === "2025-002");
+        setIsCompanyAccount(isCompany);
+        
         // Check for existing investment in current month (supports nested or legacy)
         const yearActivities = memberData.activities?.[year] || {};
         const monthActivity = yearActivities[month];
@@ -72,6 +83,7 @@ function MonthlyActivity() {
       } else {
         setMember(null);
         setExistingInvestment(null);
+        setIsCompanyAccount(false);
       }
       setLoadingMember(false);
     };
@@ -99,12 +111,16 @@ function MonthlyActivity() {
         
         if (!error && data) {
           setCurrentSharePrice(data.price);
+          // Initialize withdrawal share price with current share price
+          setWdSharePrice(data.price.toString());
         } else {
           setCurrentSharePrice(null);
+          setWdSharePrice('');
         }
       } catch (error) {
         console.error('Error fetching share price:', error);
         setCurrentSharePrice(null);
+        setWdSharePrice('');
       } finally {
         setLoadingSharePrice(false);
       }
@@ -199,7 +215,12 @@ function MonthlyActivity() {
     setSaving(true);
     try {
       const investmentAmount = parseFloat(invAmount || 0) || 0;
-      const investmentFine = parseFloat(invFine || 0) || 0;
+      
+      // Check if this is the Company Account member (Member-ID: "2025-002")
+      const isCompanyMember = (member?.payment?.membershipId === "2025-002") || (member?.payment_membership_id === "2025-002");
+      
+      // For company account, set fine to 0; otherwise use the entered fine amount
+      const investmentFine = isCompanyMember ? 0 : parseFloat(invFine || 0) || 0;
       
       // Generate fallback receipt if admin didn't edit or prefill failed
       const yr = parseInt(year, 10);
@@ -231,12 +252,10 @@ function MonthlyActivity() {
           sharePrice: currentSharePrice || 0,
           shares: calculatedShares || 0,
           customReceipt: customReceiptToUse,
+          manualReceipt: invManualReceipt || '',
           createdAt: new Date()
         }
       };
-      
-      // Check if this is the Company Account member (Member-ID: "2025-002")
-      const isCompanyMember = (member?.payment?.membershipId === "2025-002") || (member?.payment_membership_id === "2025-002");
       
       if (isCompanyMember) {
         // For company member, create a company transaction record
@@ -252,6 +271,7 @@ function MonthlyActivity() {
             year: parseInt(year),
             month: month,
             custom_receipt: customReceiptToUse,
+            manual_receipt: invManualReceipt || '',
             share_price: currentSharePrice || 0,
             shares: calculatedShares || 0,
             created_at: new Date(),
@@ -308,8 +328,9 @@ function MonthlyActivity() {
     if (!id || !year || !month) return;
     // Validate inputs and balances
     const amount = parseFloat(wdAmountToWithdraw || 0) || 0;
-    if (!currentSharePrice || currentSharePrice <= 0) {
-      alert('Current share price not available.');
+    const sharePrice = parseFloat(wdSharePrice || 0) || 0;
+    if (!wdSharePrice || sharePrice <= 0) {
+      alert('Share price must be set and greater than 0.');
       return;
     }
     if (amount <= 0) {
@@ -318,7 +339,7 @@ function MonthlyActivity() {
     }
 
     const availableShares = parseFloat(member?.total_shares || 0) || 0;
-    const sharesToWithdraw = amount / currentSharePrice;
+    const sharesToWithdraw = amount / sharePrice;
     if (sharesToWithdraw > availableShares + 1e-8) {
       alert('Withdrawal exceeds available shares.');
       return;
@@ -337,7 +358,7 @@ function MonthlyActivity() {
             type: 'withdrawal',
             amount: amount,
             shares: sharesToWithdraw,
-            sharePrice: currentSharePrice,
+            sharePrice: sharePrice,
             status: 'confirmed',
             createdAt: new Date()
           } }
@@ -353,6 +374,148 @@ function MonthlyActivity() {
       alert('Failed to save withdrawal');
     }
     setSaving(false);
+  };
+
+  // Function to generate consolidated statement PDF
+  const handleGenerateConsolidatedStatement = async () => {
+    if (!member || !year || !month) return;
+    
+    setGeneratingReport(true);
+    try {
+      // Get current share price for the month
+      const effectSharePrice = currentSharePrice || 0;
+      
+      // Calculate investment in this specific month
+      const monthActivity = member?.activities?.[year]?.[month] || {};
+      const monthInvestment = monthActivity?.investment || (monthActivity?.type === 'investment' ? monthActivity : null);
+      const monthWithdrawal = monthActivity?.withdrawal || (monthActivity?.type === 'withdrawal' ? monthActivity : null);
+      
+      const investmentInMonth = monthInvestment?.amount || 0;
+      const fineInMonth = monthInvestment?.fine || 0;
+      const sharesInMonth = monthInvestment?.shares || 0;
+      const withdrawalInMonth = monthWithdrawal?.amount || 0;
+      const sharesWithdrawnInMonth = monthWithdrawal?.shares || 0;
+      
+      // Calculate total invested amount from all activities
+      let totalInvested = 0;
+      let totalFines = 0;
+      if (member.activities) {
+        Object.keys(member.activities).forEach(activityYear => {
+          const yearActivities = member.activities[activityYear];
+          Object.keys(yearActivities).forEach(activityMonth => {
+            const activity = yearActivities[activityMonth];
+            const inv = activity?.investment || (activity?.type === 'investment' ? activity : null);
+            if (inv) {
+              totalInvested += parseFloat(inv.amount || 0);
+              totalFines += parseFloat(inv.fine || 0);
+            }
+          });
+        });
+      }
+      
+      const totalShares = parseFloat(member.total_shares || 0);
+      const valuationOfShares = totalShares * effectSharePrice;
+      
+      // Create PDF
+      const pdf = new jsPDF();
+      
+      // Header
+      pdf.setFontSize(18);
+      pdf.setTextColor(217, 119, 6); // Amber color
+      pdf.text('CONSOLIDATED STATEMENT', 105, 20, { align: 'center' });
+      
+      pdf.setFontSize(12);
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(`Member: ${member.name || 'N/A'}`, 20, 35);
+      pdf.text(`Membership ID: ${member?.payment?.membershipId || member?.payment_membership_id || 'N/A'}`, 20, 42);
+      pdf.text(`Period: ${month} ${year}`, 20, 49);
+      pdf.text(`Generated On: ${new Date().toLocaleDateString()}`, 20, 56);
+      
+      // Line separator
+      pdf.setDrawColor(217, 119, 6);
+      pdf.line(20, 62, 190, 62);
+      
+      let yPos = 75;
+      
+      // Current Month Summary
+      pdf.setFontSize(14);
+      pdf.setTextColor(217, 119, 6);
+      pdf.text('CURRENT MONTH SUMMARY', 20, yPos);
+      
+      yPos += 10;
+      pdf.setFontSize(10);
+      pdf.setTextColor(0, 0, 0);
+      
+      pdf.text(`Investment Amount: ₹${investmentInMonth.toFixed(2)}`, 25, yPos);
+      yPos += 7;
+      
+      if (fineInMonth > 0) {
+        pdf.text(`Fine Applied: ₹${fineInMonth.toFixed(2)}`, 25, yPos);
+        yPos += 7;
+      }
+      
+      pdf.text(`Shares Acquired: ${sharesInMonth.toFixed(2)}`, 25, yPos);
+      yPos += 7;
+      
+      pdf.text(`Share Price: ₹${effectSharePrice.toFixed(2)}`, 25, yPos);
+      yPos += 7;
+      
+      if (withdrawalInMonth > 0) {
+        pdf.text(`Withdrawal Amount: ₹${withdrawalInMonth.toFixed(2)}`, 25, yPos);
+        yPos += 7;
+        pdf.text(`Shares Withdrawn: ${sharesWithdrawnInMonth.toFixed(2)}`, 25, yPos);
+        yPos += 7;
+      }
+      
+      yPos += 5;
+      pdf.setDrawColor(200, 200, 200);
+      pdf.line(20, yPos, 190, yPos);
+      yPos += 10;
+      
+      // Consolidated Summary
+      pdf.setFontSize(14);
+      pdf.setTextColor(217, 119, 6);
+      pdf.text('CONSOLIDATED SUMMARY', 20, yPos);
+      
+      yPos += 10;
+      pdf.setFontSize(10);
+      pdf.setTextColor(0, 0, 0);
+      
+      pdf.text(`Total Invested: ₹${totalInvested.toFixed(2)}`, 25, yPos);
+      yPos += 7;
+      
+      if (totalFines > 0) {
+        pdf.text(`Total Fines: ₹${totalFines.toFixed(2)}`, 25, yPos);
+        yPos += 7;
+      }
+      
+      pdf.text(`Total Shares: ${totalShares.toFixed(2)}`, 25, yPos);
+      yPos += 7;
+      
+      pdf.text(`Share Price (${month} ${year}): ₹${effectSharePrice.toFixed(2)}`, 25, yPos);
+      yPos += 7;
+      
+      pdf.text(`Valuation of Shares: ₹${valuationOfShares.toFixed(2)}`, 25, yPos);
+      yPos += 10;
+      
+      // Bottom line
+      pdf.setDrawColor(200, 200, 200);
+      pdf.line(20, yPos, 190, yPos);
+      
+      yPos += 10;
+      pdf.setFontSize(8);
+      pdf.setTextColor(100, 100, 100);
+      pdf.text('This is a computer-generated document.', 20, yPos, { align: 'center' });
+      
+      // Save PDF
+      const fileName = `Statement_${member.name?.replace(/\s+/g, '_')}_${month}_${year}.pdf`;
+      pdf.save(fileName);
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate consolidated statement');
+    }
+    setGeneratingReport(false);
   };
 
   return (
@@ -390,8 +553,8 @@ function MonthlyActivity() {
             <label className={`cursor-pointer rounded-xl border ${selectedOption==='dividend' ? 'border-amber-500 ring-2 ring-amber-200' : 'border-amber-200'} bg-white p-4 flex items-start gap-3`}>
               <input type="radio" name="activityType" value="dividend" checked={selectedOption==='dividend'} onChange={() => setSelectedOption('dividend')} className="mt-1" />
               <div>
-                <div className="text-sm font-semibold text-slate-900">Dividend</div>
-                <div className="text-xs text-slate-500">Record a dividend</div>
+                <div className="text-sm font-semibold text-slate-900">Statement</div>
+                <div className="text-xs text-slate-500">Generate consolidated statement</div>
               </div>
             </label>
           </div>
@@ -475,14 +638,17 @@ function MonthlyActivity() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Fine (₹) — optional</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Fine (₹) — optional
+                      {isCompanyAccount && <span className="text-xs text-amber-600 ml-2">(No fine for company account)</span>}
+                    </label>
                     <input 
                       type="number" 
-                      value={invFine} 
+                      value={isCompanyAccount ? '0' : invFine} 
                       onChange={(e) => setInvFine(e.target.value)} 
-                      className="w-full px-3 py-2 rounded-lg border border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500" 
-                      placeholder="Enter fine" 
-                      disabled={loadingMember || !isEditablePeriod}
+                      className={`w-full px-3 py-2 rounded-lg border border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500 ${isCompanyAccount ? 'bg-amber-50' : ''}`}
+                      placeholder={isCompanyAccount ? 'No fine applied' : 'Enter fine'} 
+                      disabled={loadingMember || !isEditablePeriod || isCompanyAccount}
                     />
                   </div>
                   <div>
@@ -511,6 +677,17 @@ function MonthlyActivity() {
                       disabled={loadingMember || !isEditablePeriod}
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Manual receipt — optional</label>
+                    <input 
+                      type="text" 
+                      value={invManualReceipt} 
+                      onChange={(e) => setInvManualReceipt(e.target.value)} 
+                      className="w-full px-3 py-2 rounded-lg border border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500" 
+                      placeholder="Enter manual receipt reference" 
+                      disabled={loadingMember || !isEditablePeriod}
+                    />
+                  </div>
                   <div className="flex items-center justify-end">
                     <button 
                       onClick={handleSaveInvestment} 
@@ -532,13 +709,14 @@ function MonthlyActivity() {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Present share price for {month} {year}</label>
                   <input 
-                    type="text" 
-                    value={loadingSharePrice ? 'Loading...' : (currentSharePrice ? `₹${currentSharePrice.toFixed(2)}` : 'No price set')} 
-                    readOnly 
-                    className={`w-full px-3 py-2 rounded-lg border ${currentSharePrice ? 'border-amber-300 bg-amber-50' : 'border-red-300 bg-red-50'}`}
-                    placeholder="—" 
+                    type="number" 
+                    value={loadingSharePrice ? '' : wdSharePrice} 
+                    onChange={(e) => setWdSharePrice(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-lg border ${wdSharePrice && parseFloat(wdSharePrice) > 0 ? 'border-amber-300' : 'border-red-300 bg-red-50'} focus:outline-none focus:ring-2 focus:ring-amber-500`}
+                    placeholder={loadingSharePrice ? 'Loading...' : 'Enter share price'} 
+                    disabled={loadingSharePrice || !isEditablePeriod}
                   />
-                  {!currentSharePrice && !loadingSharePrice && (
+                  {!wdSharePrice && !loadingSharePrice && (
                     <p className="text-xs text-red-600 mt-1">⚠️ Share price must be set for {month} {year} before processing withdrawals</p>
                   )}
                 </div>
@@ -557,8 +735,8 @@ function MonthlyActivity() {
                   <input 
                     type="text" 
                     value={
-                      member?.total_shares && currentSharePrice 
-                        ? `₹${(member.total_shares * currentSharePrice).toFixed(2)}` 
+                      member?.total_shares && wdSharePrice && parseFloat(wdSharePrice) > 0
+                        ? `₹${(member.total_shares * parseFloat(wdSharePrice)).toFixed(2)}` 
                         : '—'
                     } 
                     readOnly 
@@ -572,9 +750,9 @@ function MonthlyActivity() {
                     type="number" 
                     value={wdAmountToWithdraw} 
                     onChange={(e) => setWdAmountToWithdraw(e.target.value)} 
-                    className={`w-full px-3 py-2 rounded-lg border ${currentSharePrice ? 'border-amber-300' : 'border-red-300 bg-red-50'} focus:outline-none focus:ring-2 focus:ring-amber-500`} 
+                    className={`w-full px-3 py-2 rounded-lg border ${wdSharePrice && parseFloat(wdSharePrice) > 0 ? 'border-amber-300' : 'border-red-300 bg-red-50'} focus:outline-none focus:ring-2 focus:ring-amber-500`} 
                     placeholder="Enter amount" 
-                    disabled={!currentSharePrice}
+                    disabled={!wdSharePrice || parseFloat(wdSharePrice) <= 0}
                   />
                 </div>
                 <div>
@@ -582,8 +760,8 @@ function MonthlyActivity() {
                   <input 
                     type="text" 
                     value={
-                      wdAmountToWithdraw && currentSharePrice 
-                        ? (parseFloat(wdAmountToWithdraw) / currentSharePrice).toFixed(2)
+                      wdAmountToWithdraw && wdSharePrice && parseFloat(wdSharePrice) > 0
+                        ? (parseFloat(wdAmountToWithdraw) / parseFloat(wdSharePrice)).toFixed(2)
                         : '0.00'
                     } 
                     readOnly 
@@ -595,8 +773,8 @@ function MonthlyActivity() {
 
               {!wdApproved ? (
                 <div className="flex items-center gap-3">
-                  <button onClick={handleApproveWithdrawal} disabled={!wdAmountToWithdraw || !isEditablePeriod || !currentSharePrice} className="rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2 disabled:opacity-50">
-                    {!currentSharePrice ? 'Share Price Required' : 'Approve'}
+                  <button onClick={handleApproveWithdrawal} disabled={!wdAmountToWithdraw || !isEditablePeriod || !wdSharePrice || parseFloat(wdSharePrice) <= 0} className="rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2 disabled:opacity-50">
+                    {!wdSharePrice || parseFloat(wdSharePrice) <= 0 ? 'Share Price Required' : 'Approve'}
                   </button>
                   <button onClick={handleDenyWithdrawal} className="rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 text-sm font-semibold px-4 py-2">Deny</button>
                 </div>
@@ -608,8 +786,8 @@ function MonthlyActivity() {
                       <input 
                         type="text" 
                         value={
-                          member?.total_shares && currentSharePrice 
-                            ? `₹${((member.total_shares * currentSharePrice) - (parseFloat(wdAmountToWithdraw) || 0)).toFixed(2)}` 
+                          member?.total_shares && wdSharePrice && parseFloat(wdSharePrice) > 0
+                            ? `₹${((member.total_shares * parseFloat(wdSharePrice)) - (parseFloat(wdAmountToWithdraw) || 0)).toFixed(2)}` 
                             : '—'
                         } 
                         readOnly 
@@ -622,8 +800,8 @@ function MonthlyActivity() {
                       <input 
                         type="text" 
                         value={
-                          member?.total_shares && wdAmountToWithdraw && currentSharePrice
-                            ? (member.total_shares - (parseFloat(wdAmountToWithdraw) / currentSharePrice)).toFixed(2)
+                          member?.total_shares && wdAmountToWithdraw && wdSharePrice && parseFloat(wdSharePrice) > 0
+                            ? (member.total_shares - (parseFloat(wdAmountToWithdraw) / parseFloat(wdSharePrice))).toFixed(2)
                             : member?.total_shares 
                             ? member.total_shares.toFixed(2)
                             : '0.00'
@@ -635,8 +813,8 @@ function MonthlyActivity() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <button onClick={handleConfirmWithdrawal} disabled={!isEditablePeriod || !currentSharePrice} className="rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2 disabled:opacity-50">
-                      {!currentSharePrice ? 'Share Price Required' : 'Confirm'}
+                    <button onClick={handleConfirmWithdrawal} disabled={!isEditablePeriod || !wdSharePrice || parseFloat(wdSharePrice) <= 0} className="rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2 disabled:opacity-50">
+                      {!wdSharePrice || parseFloat(wdSharePrice) <= 0 ? 'Share Price Required' : 'Confirm'}
                     </button>
                     <button onClick={handleDenyWithdrawal} className="rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 text-sm font-semibold px-4 py-2">Deny</button>
                   </div>
@@ -647,8 +825,73 @@ function MonthlyActivity() {
 
           {selectedOption === 'dividend' && (
             <div className="rounded-2xl border border-amber-200 p-5 space-y-4 bg-amber-50/30">
-              <h3 className="text-sm font-semibold text-slate-700">Dividend</h3>
-              <p className="text-sm text-slate-500">No fields yet. Future implementation.</p>
+              <h3 className="text-sm font-semibold text-slate-700">Consolidated Statement</h3>
+              <p className="text-sm text-slate-500 mb-4">
+                Generate a comprehensive PDF report for this member showing all investment details, shares, and valuations for {month} {year}.
+              </p>
+              
+              {member && (
+                <div className="space-y-3">
+                  <div className="bg-white rounded-lg border border-amber-200 p-4">
+                    <h4 className="text-xs font-semibold text-slate-700 mb-3">Report Preview</h4>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Member Name:</span>
+                        <span className="font-medium text-slate-900">{member.name || 'N/A'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Membership ID:</span>
+                        <span className="font-medium text-slate-900">{member?.payment?.membershipId || member?.payment_membership_id || 'N/A'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Total Shares:</span>
+                        <span className="font-medium text-slate-900">{member.total_shares?.toFixed(2) || '0.00'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Share Price ({month} {year}):</span>
+                        <span className="font-medium text-slate-900">₹{currentSharePrice?.toFixed(2) || '0.00'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-amber-100 border border-amber-300 rounded-lg p-3">
+                    <p className="text-xs text-amber-800">
+                      <strong>Note:</strong> The PDF will include:
+                    </p>
+                    <ul className="text-xs text-amber-800 mt-2 ml-4 list-disc space-y-1">
+                      <li>Investment details for {month} {year}</li>
+                      <li>Total invested amount across all periods</li>
+                      <li>Total shares and current month shares</li>
+                      <li>Valuation of shares at current price</li>
+                      <li>Withdrawal information (if any) for this month</li>
+                    </ul>
+                  </div>
+                  
+                  <button 
+                    onClick={handleGenerateConsolidatedStatement}
+                    disabled={generatingReport || !member}
+                    className="w-full rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-3 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {generatingReport ? (
+                      <>
+                        <span className="animate-spin">⏳</span>
+                        <span>Generating PDF...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>📄</span>
+                        <span>Download Consolidated Statement</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+              
+              {!member && (
+                <div className="text-center py-8">
+                  <p className="text-sm text-slate-500">Loading member information...</p>
+                </div>
+              )}
             </div>
           )}
         </div>

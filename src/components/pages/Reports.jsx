@@ -591,7 +591,8 @@ const Reports = () => {
         'S. No.': index + 1,
         'Date': reportDate,
         'MEMBER NAME': memberDisplayName,
-        'RECEIPT': inv?.customReceipt || '',
+        'SYSTEM RECEIPT': inv?.customReceipt || '',
+        'MANUAL RECEIPT': inv?.manualReceipt || '',
         'AMOUNT': inv ? (parseFloat(inv.amount || 0) || 0) : 0,
         'AUDIT V.NO': null, // Completely empty for physical audit
         'AUDIT SIGN': null, // Completely empty for physical audit
