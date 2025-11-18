@@ -167,10 +167,11 @@ function Compamt() {
   }, [dividendEvents]);
   
   // Calculate company balance from transactions (including registration, fine, and dividend donation amounts)
+  // Only subtract investments made by company account (membership_id = '2025-002')
   const companyBalance = useMemo(() => {
     const totalCompanyIncome = totalRegistration + totalFine + totalDividendDonationInvestment; // Include registration + fines + dividend donations
     return companyTransactions.reduce((balance, transaction) => {
-      if (transaction.type === 'investment') {
+      if (transaction.type === 'investment' && (transaction.membership_id === '2025-002' || transaction.membershipId === '2025-002')) {
         return balance - transaction.amount; // Company pays out investment
       }
       return balance;
@@ -178,9 +179,10 @@ function Compamt() {
   }, [companyTransactions, totalRegistration, totalFine, totalDividendDonationInvestment]);
 
   // Total invested by the company account (sum of investment transactions)
+  // Only count investments made by company account (membership_id = '2025-002')
   const totalCompanyInvested = useMemo(() => {
     return companyTransactions.reduce((sum, tx) => {
-      if (tx.type === 'investment') {
+      if (tx.type === 'investment' && (tx.membership_id === '2025-002' || tx.membershipId === '2025-002')) {
         return sum + (parseFloat(tx.amount || 0) || 0);
       }
       return sum;

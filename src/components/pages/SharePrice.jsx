@@ -28,24 +28,23 @@ const DeleteIcon = () => (
   </svg>
 );
 
-const months = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+const quarters = [
+  { value: 'Q1', label: 'Q1 (January, February, March)', months: ['Jan', 'Feb', 'Mar'] },
+  { value: 'Q2', label: 'Q2 (April, May, June)', months: ['Apr', 'May', 'Jun'] },
+  { value: 'Q3', label: 'Q3 (July, August, September)', months: ['Jul', 'Aug', 'Sep'] },
+  { value: 'Q4', label: 'Q4 (October, November, December)', months: ['Oct', 'Nov', 'Dec'] }
 ];
 
 const SharePrice = () => {
   const [sharePrices, setSharePrices] = useState([]);
   const [year, setYear] = useState(new Date().getFullYear());
-  const [month, setMonth] = useState(new Date().toLocaleString('default', { month: 'short' }));
+  const [quarter, setQuarter] = useState('Q1');
   const [price, setPrice] = useState('');
-  const [editingId, setEditingId] = useState(null);
+  const [editingQuarter, setEditingQuarter] = useState(null);
   const [editingPrice, setEditingPrice] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { logout } = useAuth();
-
-  // Financial Indicators section state (moved from Financial.jsx)
-  const [fiUpdatedPrice, setFiUpdatedPrice] = useState('');
 
   useEffect(() => {
     const fetchSharePrices = async () => {
@@ -58,15 +57,9 @@ const SharePrice = () => {
       if (error) {
         console.error('Error fetching share prices:', error);
       } else {
-        // Sort by year desc, then by month desc locally
-        const sortedData = (data || []).sort((a, b) => {
-          if (a.year !== b.year) {
-            return b.year - a.year;
-          }
-          const monthOrder = ['Dec', 'Nov', 'Oct', 'Sep', 'Aug', 'Jul', 'Jun', 'May', 'Apr', 'Mar', 'Feb', 'Jan'];
-          return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
-        });
-        setSharePrices(sortedData);
+        // Group by quarter and year
+        const groupedData = groupByQuarter(data || []);
+        setSharePrices(groupedData);
       }
     };
 
@@ -88,59 +81,157 @@ const SharePrice = () => {
     };
   }, []);
 
-  // When month/year changes, initialize Financial Indicators inputs from existing entry
-  useEffect(() => {
-    const existing = sharePrices.find(sp => sp.year === year && sp.month === month);
-    const present = existing?.price ? existing.price.toString() : '';
-    setFiUpdatedPrice(present);
-  }, [year, month, sharePrices]);
+  // Group share prices by quarter and year
+  const groupByQuarter = (prices) => {
+    const grouped = {};
+    
+    prices.forEach(price => {
+      const quarterKey = getQuarterFromMonth(price.month);
+      const key = `${price.year}-${quarterKey}`;
+      
+      if (!grouped[key]) {
+        grouped[key] = {
+          year: price.year,
+          quarter: quarterKey,
+          price: price.price,
+          months: quarters.find(q => q.value === quarterKey)?.months || [],
+          ids: []
+        };
+      }
+      
+      // Store all IDs for this quarter
+      if (!grouped[key].ids.includes(price.id)) {
+        grouped[key].ids.push(price.id);
+      }
+      
+      // Update price (should be same for all months in quarter)
+      grouped[key].price = price.price;
+    });
+    
+    return Object.values(grouped).sort((a, b) => {
+      if (a.year !== b.year) {
+        return b.year - a.year;
+      }
+      const quarterOrder = ['Q4', 'Q3', 'Q2', 'Q1'];
+      return quarterOrder.indexOf(b.quarter) - quarterOrder.indexOf(a.quarter);
+    });
+  };
 
+  // Get quarter from month
+  const getQuarterFromMonth = (month) => {
+    const monthIndex = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(month);
+    if (monthIndex === -1) return 'Q1';
+    return quarters[Math.floor(monthIndex / 3)].value;
+  };
+
+  // Get months for a quarter
+  const getMonthsForQuarter = (quarterValue) => {
+    const quarterData = quarters.find(q => q.value === quarterValue);
+    return quarterData ? quarterData.months : [];
+  };
+
+
+  // Handle Add Share Price
   const handleAddSharePrice = async (e) => {
     e.preventDefault();
-    if (!price.trim() || !year || !month) return;
+    if (!price.trim() || !year || !quarter) return;
     
     setLoading(true);
     try {
-      // Check if share price already exists for this year and month
-      const existingPrice = sharePrices.find(sp => sp.year === year && sp.month === month);
-      if (existingPrice) {
-        alert('Share price already exists for this month and year');
+      // Check if share price already exists for this quarter and year
+      const months = getMonthsForQuarter(quarter);
+      const checkPromises = months.map(month => 
+        supabase
+          .from('share_prices')
+          .select('id')
+          .eq('year', year)
+          .eq('month', month)
+          .maybeSingle()
+      );
+      
+      const checkResults = await Promise.all(checkPromises);
+      const existing = checkResults.find(result => result.data !== null);
+      
+      if (existing && existing.data) {
+        alert('Share price already exists for this quarter and year. Please edit the existing entry.');
         setLoading(false);
         return;
       }
 
-      // Generate quarter string based on month for backward compatibility
-      const getQuarterFromMonth = (monthName) => {
-        const monthIndex = months.indexOf(monthName);
-        if (monthIndex === -1) return `${monthName}-${year}`;
-        
-        const quarterStartMonth = Math.floor(monthIndex / 3) * 3;
-        const quarterEndMonth = quarterStartMonth + 2;
-        const startMonthName = months[quarterStartMonth];
-        const endMonthName = months[quarterEndMonth];
-        
-        return `${startMonthName}-${endMonthName}-${year}`;
-      };
+      // Insert 3 records (one for each month in the quarter)
+      // Generate quarter string for backward compatibility (format: "Jan-Mar-2025")
+      // If there's a unique constraint on (year, quarter), we need unique values
+      // So we'll use format: "Jan-Mar-2025" for all months, but handle constraint if it exists
+      const quarterString = `${months[0]}-${months[2]}-${year}`;
+      
+      // Insert all 3 months in a single batch insert for better reliability
+      // Try with same quarter value first - if unique constraint exists, it will fail and we'll handle it
+      const recordsToInsert = months.map(month => ({
+        year: parseInt(year),
+        month: month,
+        quarter: quarterString, // Required NOT NULL field - same value for all 3 months
+        price: parseFloat(price),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }));
 
-      const quarter = getQuarterFromMonth(month);
-
-      const { error } = await supabase
+      // Try batch insert first
+      let { data, error } = await supabase
         .from('share_prices')
-        .insert({
-          year: parseInt(year),
-          month,
-          quarter: quarter,
-          price: parseFloat(price),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
+        .insert(recordsToInsert)
+        .select();
+
+      // If unique constraint on (year, quarter) exists, insert one by one with unique quarter values
+      if (error && error.message && error.message.includes('share_prices_year_quarter_key')) {
+        console.warn('Unique constraint on (year, quarter) detected. Inserting with unique quarter values per month.');
+        
+        // Insert one by one with month-specific quarter values to avoid constraint violation
+        const insertResults = [];
+        for (const month of months) {
+          const { data: insertData, error: insertError } = await supabase
+            .from('share_prices')
+            .insert({
+              year: parseInt(year),
+              month: month,
+              quarter: `${month}-${quarterString}`, // Make it unique by including month
+              price: parseFloat(price),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .select()
+            .single();
+          
+          if (insertError) {
+            insertResults.push({ error: insertError });
+          } else {
+            insertResults.push({ data: insertData });
+          }
+        }
+        
+        const errors = insertResults.filter(r => r.error);
+        if (errors.length > 0) {
+          console.error('Error adding share prices:', errors);
+          alert('Error adding share price: ' + errors[0].error.message);
+        } else {
+          data = insertResults.map(r => r.data).filter(Boolean);
+          error = null;
+        }
+      }
 
       if (error) {
-        console.error('Error adding share price:', error);
+        console.error('Error adding share prices:', error);
         alert('Error adding share price: ' + error.message);
       } else {
-        setPrice('');
-        alert('✅ Share price added successfully!');
+        // Verify all 3 months were inserted
+        if (data && data.length === 3) {
+          setPrice('');
+          alert('✅ Share price added successfully for ' + quarters.find(q => q.value === quarter)?.label + '!');
+        } else if (data && data.length > 0) {
+          console.warn('Not all months were inserted. Expected 3, got:', data.length);
+          alert('⚠️ Share price partially added. Please check and edit if needed.');
+        } else {
+          alert('⚠️ Share price could not be added. Please try again.');
+        }
       }
     } catch (err) {
       console.error('Error adding share price:', err);
@@ -149,86 +240,34 @@ const SharePrice = () => {
     setLoading(false);
   };
 
-  const handleSaveFinancial = async () => {
-    if (!year || !month) return;
-    setLoading(true);
-    try {
-      // Generate quarter string based on month for backward compatibility
-      const getQuarterFromMonth = (monthName, yearNum) => {
-        const monthIndex = months.indexOf(monthName);
-        if (monthIndex === -1) return `${monthName}-${yearNum}`;
-        
-        const quarterStartMonth = Math.floor(monthIndex / 3) * 3;
-        const quarterEndMonth = quarterStartMonth + 2;
-        const startMonthName = months[quarterStartMonth];
-        const endMonthName = months[quarterEndMonth];
-        
-        return `${startMonthName}-${endMonthName}-${yearNum}`;
-      };
-
-      const quarter = getQuarterFromMonth(month, year);
-      
-      const existing = sharePrices.find(sp => sp.year === year && sp.month === month);
-      if (existing) {
-        const { error } = await supabase
-          .from('share_prices')
-          .update({
-            price: fiUpdatedPrice ? parseFloat(fiUpdatedPrice) : existing.price,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existing.id);
-        if (error) {
-          alert('Error updating share price: ' + error.message);
-        } else {
-          alert('✅ Share price updated successfully!');
-        }
-      } else {
-        const { error } = await supabase
-          .from('share_prices')
-          .insert({
-            year: parseInt(year),
-            month,
-            quarter: quarter,
-            price: fiUpdatedPrice ? parseFloat(fiUpdatedPrice) : 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-        if (error) {
-          alert('Error creating share price: ' + error.message);
-        } else {
-          alert('✅ Share price created successfully!');
-        }
-      }
-    } catch (e) {
-      alert('Error saving share price');
-    }
-    setLoading(false);
+  // Handle Edit
+  const handleEdit = (quarterData) => {
+    setEditingQuarter(quarterData);
+    setEditingPrice(quarterData.price.toString());
   };
 
-  const handleEdit = (sharePrice) => {
-    setEditingId(sharePrice.id);
-    setEditingPrice(sharePrice.price.toString());
-  };
-
-  const handleUpdate = async (id) => {
-    if (!editingPrice.trim()) return;
+  // Handle Update
+  const handleUpdate = async () => {
+    if (!editingPrice.trim() || !editingQuarter) return;
     
     setLoading(true);
     try {
+      // Update all 3 months for this quarter
       const { error } = await supabase
         .from('share_prices')
         .update({
           price: parseFloat(editingPrice),
           updated_at: new Date().toISOString()
         })
-        .eq('id', id);
+        .in('id', editingQuarter.ids);
 
       if (error) {
         console.error('Error updating share price:', error);
         alert('Error updating share price: ' + error.message);
       } else {
-        setEditingId(null);
+        setEditingQuarter(null);
         setEditingPrice('');
+        alert('✅ Share price updated successfully!');
       }
     } catch (err) {
       console.error('Error updating share price:', err);
@@ -237,19 +276,23 @@ const SharePrice = () => {
     setLoading(false);
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this share price?')) return;
+  // Handle Delete
+  const handleDelete = async (quarterData) => {
+    if (!window.confirm(`Are you sure you want to delete share price for ${quarterData.quarter} ${quarterData.year}? This will delete prices for all 3 months in this quarter.`)) return;
     
     setLoading(true);
     try {
+      // Delete all 3 months for this quarter
       const { error } = await supabase
         .from('share_prices')
         .delete()
-        .eq('id', id);
+        .in('id', quarterData.ids);
 
       if (error) {
         console.error('Error deleting share price:', error);
         alert('Error deleting share price: ' + error.message);
+      } else {
+        alert('✅ Share price deleted successfully!');
       }
     } catch (err) {
       console.error('Error deleting share price:', err);
@@ -284,8 +327,8 @@ const SharePrice = () => {
                 <span>Back to Admin</span>
               </button>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">Monthly Share Price</h1>
-                <p className="text-sm text-gray-500">Set and manage share prices for each month</p>
+                <h1 className="text-xl font-bold text-gray-900">Quarterly Share Price</h1>
+                <p className="text-sm text-gray-500">Set and manage share prices for each quarter</p>
               </div>
             </div>
 
@@ -301,48 +344,10 @@ const SharePrice = () => {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Update Existing Month Section */}
-        <div className="bg-white shadow-sm rounded-lg border border-amber-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Update Existing Month Price</h2>
-          <p className="text-sm text-gray-600 mb-4">Select a month to view or update its share price</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Current Share Price</label>
-              <input
-                type="text"
-                value={(sharePrices.find(sp => sp.year === year && sp.month === month)?.price ?? '') === '' ? 'Not Set' : `₹${(sharePrices.find(sp => sp.year === year && sp.month === month)?.price || 0).toFixed(2)}`}
-                className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm bg-amber-50 font-semibold"
-                readOnly
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Updated Share Price (₹)</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={fiUpdatedPrice}
-                onChange={(e) => setFiUpdatedPrice(e.target.value)}
-                className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm"
-                placeholder="Enter new share price"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <button
-              onClick={handleSaveFinancial}
-              disabled={loading || !fiUpdatedPrice}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white rounded-lg font-medium text-sm shadow-sm"
-            >
-              <SaveIcon />
-              {loading ? 'Saving...' : 'Update Price'}
-            </button>
-          </div>
-        </div>
         {/* Add New Share Price Form */}
         <div className="bg-white shadow-sm rounded-lg border border-amber-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Add New Monthly Share Price</h2>
-          <p className="text-sm text-gray-600 mb-4">Set share price for a specific month and year</p>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Add New Quarterly Share Price</h2>
+          <p className="text-sm text-gray-600 mb-4">Set share price for a specific quarter and year. The price will apply to all 3 months in the quarter.</p>
           <form onSubmit={handleAddSharePrice} className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
@@ -358,15 +363,15 @@ const SharePrice = () => {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Quarter</label>
               <select
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
+                value={quarter}
+                onChange={(e) => setQuarter(e.target.value)}
                 className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                 required
               >
-                {months.map(m => (
-                  <option key={m} value={m}>{m}</option>
+                {quarters.map(q => (
+                  <option key={q.value} value={q.value}>{q.label}</option>
                 ))}
               </select>
             </div>
@@ -400,15 +405,16 @@ const SharePrice = () => {
         <div className="bg-white shadow-sm rounded-lg border border-amber-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-amber-200">
             <h2 className="text-lg font-semibold text-gray-900">Share Prices History</h2>
+            <p className="text-sm text-gray-600 mt-1">Prices are set quarterly and apply to all 3 months in each quarter</p>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-amber-100 text-sm">
               <thead className="bg-amber-50">
                 <tr>
                   <th className="px-6 py-3 text-left font-semibold text-slate-700">Year</th>
-                  <th className="px-6 py-3 text-left font-semibold text-slate-700">Month</th>
+                  <th className="px-6 py-3 text-left font-semibold text-slate-700">Quarter</th>
+                  <th className="px-6 py-3 text-left font-semibold text-slate-700">Months</th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-700">Price (₹)</th>
-                  <th className="px-6 py-3 text-left font-semibold text-slate-700">Created</th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-700">Actions</th>
                 </tr>
               </thead>
@@ -420,36 +426,34 @@ const SharePrice = () => {
                     </td>
                   </tr>
                 ) : (
-                  sharePrices.map((sharePrice) => (
-                    <tr key={sharePrice.id} className="hover:bg-amber-50">
-                      <td className="px-6 py-4 text-gray-900 font-medium">{sharePrice.year}</td>
-                      <td className="px-6 py-4 text-gray-700">{sharePrice.month}</td>
+                  sharePrices.map((quarterData) => (
+                    <tr key={`${quarterData.year}-${quarterData.quarter}`} className="hover:bg-amber-50">
+                      <td className="px-6 py-4 text-gray-900 font-medium">{quarterData.year}</td>
+                      <td className="px-6 py-4 text-gray-700 font-semibold">{quarterData.quarter}</td>
                       <td className="px-6 py-4 text-gray-700">
-                        {editingId === sharePrice.id ? (
+                        {quarterData.months.join(', ')}
+                      </td>
+                      <td className="px-6 py-4 text-gray-700">
+                        {editingQuarter && editingQuarter.year === quarterData.year && editingQuarter.quarter === quarterData.quarter ? (
                           <input
                             type="number"
                             step="0.01"
                             min="0"
                             value={editingPrice}
                             onChange={(e) => setEditingPrice(e.target.value)}
-                            className="w-24 px-2 py-1 border border-amber-300 rounded text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                            className="w-32 px-2 py-1 border border-amber-300 rounded text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                             autoFocus
                           />
                         ) : (
-                          `₹${sharePrice.price.toFixed(2)}`
+                          `₹${quarterData.price.toFixed(2)}`
                         )}
-                      </td>
-                      <td className="px-6 py-4 text-gray-500 text-xs">
-                        {sharePrice.created_at
-                          ? new Date(sharePrice.created_at).toLocaleDateString()
-                          : 'N/A'}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
-                          {editingId === sharePrice.id ? (
+                          {editingQuarter && editingQuarter.year === quarterData.year && editingQuarter.quarter === quarterData.quarter ? (
                             <>
                               <button
-                                onClick={() => handleUpdate(sharePrice.id)}
+                                onClick={handleUpdate}
                                 disabled={loading}
                                 className="p-1 text-green-600 hover:text-green-700 disabled:opacity-50"
                                 title="Save"
@@ -458,7 +462,7 @@ const SharePrice = () => {
                               </button>
                               <button
                                 onClick={() => {
-                                  setEditingId(null);
+                                  setEditingQuarter(null);
                                   setEditingPrice('');
                                 }}
                                 className="p-1 text-gray-400 hover:text-gray-600"
@@ -470,14 +474,14 @@ const SharePrice = () => {
                           ) : (
                             <>
                               <button
-                                onClick={() => handleEdit(sharePrice)}
+                                onClick={() => handleEdit(quarterData)}
                                 className="p-1 text-blue-600 hover:text-blue-700"
                                 title="Edit"
                               >
                                 <EditIcon />
                               </button>
                               <button
-                                onClick={() => handleDelete(sharePrice.id)}
+                                onClick={() => handleDelete(quarterData)}
                                 disabled={loading}
                                 className="p-1 text-red-600 hover:text-red-700 disabled:opacity-50"
                                 title="Delete"

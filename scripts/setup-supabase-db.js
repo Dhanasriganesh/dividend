@@ -125,6 +125,90 @@ select
 from public.members
 where payment is not null and payment::text <> '{}';
 grant select on public.member_summary to authenticated;
+
+-- Create dividend_donation_events table if it doesn't exist
+create table if not exists public.dividend_donation_events (
+  id uuid primary key default gen_random_uuid(),
+  event_name varchar(255),
+  event_date date not null,
+  share_price_at_event numeric(10,2) not null,
+  distribution_pool numeric(15,2) not null,
+  company_investment_amount numeric(15,2) not null,
+  company_shares_purchased numeric(15,2) not null,
+  status varchar(50) default 'pending',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Fix existing table if fields are integer instead of numeric
+do $$ 
+begin
+  -- Check and alter share_price_at_event if it's integer
+  if exists (
+    select 1 from information_schema.columns 
+    where table_schema = 'public' 
+    and table_name = 'dividend_donation_events' 
+    and column_name = 'share_price_at_event' 
+    and data_type = 'integer'
+  ) then
+    alter table public.dividend_donation_events 
+    alter column share_price_at_event type numeric(10,2) using share_price_at_event::numeric(10,2);
+  end if;
+  
+  -- Check and alter distribution_pool if it's integer
+  if exists (
+    select 1 from information_schema.columns 
+    where table_schema = 'public' 
+    and table_name = 'dividend_donation_events' 
+    and column_name = 'distribution_pool' 
+    and data_type = 'integer'
+  ) then
+    alter table public.dividend_donation_events 
+    alter column distribution_pool type numeric(15,2) using distribution_pool::numeric(15,2);
+  end if;
+  
+  -- Check and alter company_investment_amount if it's integer
+  if exists (
+    select 1 from information_schema.columns 
+    where table_schema = 'public' 
+    and table_name = 'dividend_donation_events' 
+    and column_name = 'company_investment_amount' 
+    and data_type = 'integer'
+  ) then
+    alter table public.dividend_donation_events 
+    alter column company_investment_amount type numeric(15,2) using company_investment_amount::numeric(15,2);
+  end if;
+  
+  -- Check and alter company_shares_purchased if it's integer
+  if exists (
+    select 1 from information_schema.columns 
+    where table_schema = 'public' 
+    and table_name = 'dividend_donation_events' 
+    and column_name = 'company_shares_purchased' 
+    and data_type = 'integer'
+  ) then
+    alter table public.dividend_donation_events 
+    alter column company_shares_purchased type numeric(15,2) using company_shares_purchased::numeric(15,2);
+  end if;
+end $$;
+
+-- Add trigger for updated_at
+drop trigger if exists trg_dividend_events_updated_at on public.dividend_donation_events;
+create trigger trg_dividend_events_updated_at
+before update on public.dividend_donation_events
+for each row execute function public.set_updated_at();
+
+-- Enable RLS
+alter table public.dividend_donation_events enable row level security;
+
+-- Add RLS policy
+do $$ begin
+  if not exists (
+    select 1 from pg_policies where policyname = 'dividend_events_all_authenticated' and tablename = 'dividend_donation_events' and schemaname = 'public'
+  ) then
+    create policy dividend_events_all_authenticated on public.dividend_donation_events for all to authenticated using (true) with check (true);
+  end if;
+end $$;
 `
 
 async function main() {
