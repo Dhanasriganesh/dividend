@@ -26,6 +26,8 @@ export const TILE_PERMISSIONS = {
   COMPANY_AMOUNT: 'company_amount',
   SHARE_PRICE: 'share_price',
   DOWNLOAD_REPORT: 'download_report',
+  MEMBERSHIP_REFUND: 'membership_refund',
+  REMINDERS: 'reminders',
   EMPLOYEE_ACCESS: 'employee_access' // Admin only
 };
 
@@ -45,6 +47,7 @@ export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [employeePermissions, setEmployeePermissions] = useState({});
+  const [employeeReportAccess, setEmployeeReportAccess] = useState({});
   const [loading, setLoading] = useState(true);
 
   // Function to determine user role based on email
@@ -103,6 +106,47 @@ export const AuthProvider = ({ children }) => {
     saveEmployeePermissions(current);
   };
 
+  // Function to load employee report access from localStorage
+  const loadEmployeeReportAccess = () => {
+    const saved = localStorage.getItem('employeeReportAccess');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Error parsing employee report access:', e);
+        return {};
+      }
+    }
+    return {};
+  };
+
+  // Function to save employee report access to localStorage
+  const saveEmployeeReportAccess = (reportAccess) => {
+    localStorage.setItem('employeeReportAccess', JSON.stringify(reportAccess));
+    setEmployeeReportAccess(reportAccess);
+  };
+
+  // Function to update employee report access
+  const updateEmployeeReportAccess = (reportKey, hasAccess) => {
+    const current = loadEmployeeReportAccess();
+    current[reportKey] = hasAccess;
+    saveEmployeeReportAccess(current);
+  };
+
+  // Function to check if user has access to a specific report
+  const hasReportAccess = (reportKey) => {
+    if (userRole === USER_ROLES.ADMIN) {
+      return true; // Admin has access to all reports
+    }
+    
+    if (userRole === USER_ROLES.EMPLOYEE) {
+      const reportAccess = loadEmployeeReportAccess();
+      return reportAccess[reportKey] === true;
+    }
+    
+    return false;
+  };
+
   // Function to check if user has access to a specific tile
   const hasTileAccess = (tileKey) => {
     if (userRole === USER_ROLES.ADMIN) {
@@ -139,6 +183,8 @@ export const AuthProvider = ({ children }) => {
       
       // Load employee permissions
       setEmployeePermissions(loadEmployeePermissions());
+      // Load employee report access
+      setEmployeeReportAccess(loadEmployeeReportAccess());
       setLoading(false);
     };
 
@@ -166,6 +212,8 @@ export const AuthProvider = ({ children }) => {
         
         // Load employee permissions
         setEmployeePermissions(loadEmployeePermissions());
+        // Load employee report access
+        setEmployeeReportAccess(loadEmployeeReportAccess());
         setLoading(false);
       }
     );
@@ -197,10 +245,14 @@ export const AuthProvider = ({ children }) => {
     currentUser,
     userRole,
     employeePermissions,
+    employeeReportAccess,
     logout,
     loading,
     hasTileAccess,
-    updateEmployeePermission
+    updateEmployeePermission,
+    hasReportAccess,
+    updateEmployeeReportAccess,
+    loadEmployeeReportAccess
   };
 
   return (

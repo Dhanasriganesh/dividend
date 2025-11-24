@@ -24,10 +24,13 @@ const Dividend = () => {
   const [reportOptionUsed, setReportOptionUsed] = useState('');
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate] = useState('');
+  const [donationHistory, setDonationHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   // Fetch all members on component mount
   useEffect(() => {
     fetchMembers();
+    fetchDonationHistory();
   }, []);
 
   // Fetch members from database
@@ -46,6 +49,26 @@ const Dividend = () => {
       alert('Error fetching members: ' + error.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fetch dividend donation history
+  const fetchDonationHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const { data, error } = await supabase
+        .from('dividend_donation_events')
+        .select('*')
+        .eq('status', 'confirmed')
+        .order('event_date', { ascending: false });
+
+      if (error) throw error;
+      setDonationHistory(data || []);
+    } catch (error) {
+      console.error('Error fetching donation history:', error);
+      // Don't show alert for history fetch errors, just log it
+    } finally {
+      setLoadingHistory(false);
     }
   };
 
@@ -700,6 +723,166 @@ const Dividend = () => {
             </button>
           </div>
         )}
+
+        {/* Dividend Donation History Section */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+          <div className="p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-gray-900">Dividend Donation History</h2>
+              <button
+                onClick={fetchDonationHistory}
+                disabled={loadingHistory}
+                className="text-blue-600 hover:text-blue-800 font-medium text-sm disabled:opacity-50"
+              >
+                {loadingHistory ? 'Refreshing...' : '🔄 Refresh'}
+              </button>
+            </div>
+            
+            {loadingHistory ? (
+              <div className="text-center py-8 text-gray-500">Loading history...</div>
+            ) : donationHistory.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No dividend donation history found.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        S.No.
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Event Name
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Event Date
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Share Price
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Distribution Pool
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Company Investment
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Shares Purchased
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Created At
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {donationHistory.map((event, index) => {
+                      const eventDate = event.event_date ? new Date(event.event_date).toLocaleDateString('en-IN') : 'N/A';
+                      const createdDate = event.created_at ? new Date(event.created_at).toLocaleDateString('en-IN', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      }) : 'N/A';
+                      
+                      return (
+                        <tr key={event.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {index + 1}
+                          </td>
+                          <td className="px-4 py-4 text-sm text-gray-900 max-w-xs">
+                            <div className="truncate" title={event.event_name || 'N/A'}>
+                              {event.event_name || 'N/A'}
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {eventDate}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                            ₹{parseFloat(event.share_price_at_event || 0).toLocaleString('en-IN', { 
+                              minimumFractionDigits: 2, 
+                              maximumFractionDigits: 2 
+                            })}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                            ₹{parseFloat(event.distribution_pool || 0).toLocaleString('en-IN', { 
+                              minimumFractionDigits: 2, 
+                              maximumFractionDigits: 2 
+                            })}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-green-600 text-right">
+                            ₹{parseFloat(event.company_investment_amount || 0).toLocaleString('en-IN', { 
+                              minimumFractionDigits: 2, 
+                              maximumFractionDigits: 2 
+                            })}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                            {parseFloat(event.company_shares_purchased || 0).toLocaleString('en-IN', { 
+                              minimumFractionDigits: 2, 
+                              maximumFractionDigits: 2 
+                            })}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              event.status === 'confirmed' 
+                                ? 'bg-green-100 text-green-800' 
+                                : event.status === 'pending'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {event.status || 'N/A'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {createdDate}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {donationHistory.length > 0 && (
+                    <tfoot className="bg-gray-50">
+                      <tr>
+                        <td colSpan="4" className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">
+                          Total:
+                        </td>
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">
+                          ₹{donationHistory.reduce((sum, event) => 
+                            sum + parseFloat(event.distribution_pool || 0), 0
+                          ).toLocaleString('en-IN', { 
+                            minimumFractionDigits: 2, 
+                            maximumFractionDigits: 2 
+                          })}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-semibold text-green-600 text-right">
+                          ₹{donationHistory.reduce((sum, event) => 
+                            sum + parseFloat(event.company_investment_amount || 0), 0
+                          ).toLocaleString('en-IN', { 
+                            minimumFractionDigits: 2, 
+                            maximumFractionDigits: 2 
+                          })}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">
+                          {donationHistory.reduce((sum, event) => 
+                            sum + parseFloat(event.company_shares_purchased || 0), 0
+                          ).toLocaleString('en-IN', { 
+                            minimumFractionDigits: 2, 
+                            maximumFractionDigits: 2 
+                          })}
+                        </td>
+                        <td colSpan="2"></td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Report Display */}
         {reportData.length > 0 && (

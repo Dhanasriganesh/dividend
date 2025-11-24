@@ -35,6 +35,7 @@ const Admin = () => {
   const [reportYear, setReportYear] = useState(new Date().getFullYear());
   const [reportMonth, setReportMonth] = useState(new Date().toLocaleString('default', { month: 'short' }));
   const [showEmployeeAccess, setShowEmployeeAccess] = useState(false);
+  const [showReportAccess, setShowReportAccess] = useState(false);
   // Members table moved to a separate page
   const navigate = useNavigate();
   const { 
@@ -43,7 +44,10 @@ const Admin = () => {
     userRole, 
     hasTileAccess, 
     updateEmployeePermission, 
-    employeePermissions
+    employeePermissions,
+    updateEmployeeReportAccess,
+    loadEmployeeReportAccess,
+    employeeReportAccess
   } = useAuth();
 
   useEffect(() => {
@@ -294,291 +298,350 @@ const Admin = () => {
     XLSX.writeFile(workbook, `investment_report_${reportYear}_${reportMonth}.xlsx`);
   };
 
+  const infoCards = React.useMemo(() => [
+    {
+      label: 'Total Members',
+      value: totalMembers.toLocaleString('en-IN'),
+      subtext: 'Active registrations in the system'
+    },
+    {
+      label: 'Paid This Month',
+      value: `${totalPaidThisMonth.toLocaleString('en-IN')} / ${totalMembers.toLocaleString('en-IN')}`,
+      subtext: `${reportMonth} ${reportYear} investments`
+    },
+    {
+      label: 'Access Level',
+      value: userRole === USER_ROLES.ADMIN ? 'Administrator' : 'Employee',
+      subtext: userRole === USER_ROLES.ADMIN ? 'Full control enabled' : 'Limited privileges'
+    }
+  ], [totalMembers, totalPaidThisMonth, reportMonth, reportYear, userRole]);
+
+  const canAccessMembers = hasTileAccess(TILE_PERMISSIONS.MEMBERS);
+  const canAccessSharePrice = hasTileAccess(TILE_PERMISSIONS.SHARE_PRICE);
+  const canAccessCompanyAmount = hasTileAccess(TILE_PERMISSIONS.COMPANY_AMOUNT);
+  const canAccessCompanyAccount = hasTileAccess(TILE_PERMISSIONS.COMPANY_ACCOUNT);
+  const canAccessDividend = hasTileAccess(TILE_PERMISSIONS.DIVIDEND_DONATION);
+  const canAccessAddMember = hasTileAccess(TILE_PERMISSIONS.ADD_MEMBER);
+  const canAccessReports = hasTileAccess(TILE_PERMISSIONS.DOWNLOAD_REPORT);
+  const canAccessMembershipRefund = hasTileAccess(TILE_PERMISSIONS.MEMBERSHIP_REFUND);
+  const canAccessReminders = hasTileAccess(TILE_PERMISSIONS.REMINDERS);
+
+  const dashboardSections = React.useMemo(() => [
+    {
+      title: 'Admin Controls',
+      description: 'Configure employee access and report visibility.',
+      tiles: [
+        {
+          key: 'employeeAccess',
+          title: 'Access To Employees',
+          description: 'Manage employee permissions.',
+          icon: '👥',
+          badge: 'Admin',
+          show: userRole === USER_ROLES.ADMIN,
+          onClick: () => setShowEmployeeAccess(true)
+        },
+        {
+          key: 'reportAccess',
+          title: 'Report Access',
+          description: 'Select reports available for employees.',
+          icon: '📊',
+          badge: 'Admin',
+          show: userRole === USER_ROLES.ADMIN,
+          onClick: () => setShowReportAccess(true)
+        }
+      ]
+    },
+    {
+      title: 'Member Operations',
+      description: 'Day-to-day member management tasks.',
+      tiles: [
+        {
+          key: 'members',
+          title: 'Members',
+          description: 'Browse and search members.',
+          icon: <SearchIcon />,
+          show: canAccessMembers,
+          onClick: () => navigate('/members')
+        },
+        {
+          key: 'addMember',
+          title: 'Add Member',
+          description: 'Create a new member entry.',
+          icon: <AddIcon />,
+          show: canAccessAddMember,
+          onClick: () => { localStorage.removeItem('currentMemberPhone'); navigate('/personal'); }
+        },
+        {
+          key: 'membershipRefund',
+          title: 'Membership Refunds',
+          description: 'Settle ₹10,000 refunds (eligible after 5 years).',
+          icon: '💰',
+          show: canAccessMembershipRefund,
+          onClick: () => navigate('/membership-refund')
+        },
+        {
+          key: 'dividend',
+          title: 'Dividend',
+          description: 'Record and manage dividend donations.',
+          icon: '💝',
+          show: canAccessDividend,
+          onClick: () => navigate('/dividend')
+        },
+        {
+          key: 'reminders',
+          title: 'Reminders',
+          description: 'Insurance expiry & interest reminders.',
+          icon: '🔔',
+          show: canAccessReminders,
+          onClick: () => navigate('/reminders')
+        }
+      ]
+    },
+    {
+      title: 'Finance & Analytics',
+      description: 'Share price, company funds, and reporting.',
+      tiles: [
+        {
+          key: 'sharePrice',
+          title: 'Quarterly Share Price',
+          description: 'Set prices month by month.',
+          icon: '₹',
+          show: canAccessSharePrice,
+          onClick: () => navigate('/share-price')
+        },
+        {
+          key: 'companyAmount',
+          title: 'Company Owns Amount',
+          description: 'Manage company capital.',
+          icon: '🏦',
+          show: canAccessCompanyAmount,
+          onClick: () => navigate('/company-amount')
+        },
+        {
+          key: 'reports',
+          title: 'Reports',
+          description: 'Generate and download reports.',
+          icon: '📑',
+          show: canAccessReports,
+          onClick: () => navigate('/reports')
+        },
+        {
+          key: 'companyAccount',
+          title: 'Company Own Account',
+          description: 'Member-ID: 2025-002.',
+          icon: '🏛️',
+          show: companyMember && canAccessCompanyAccount,
+          onClick: () => companyMember && navigate(`/member/${companyMember.id}`)
+        }
+      ]
+    }
+  ], [
+    userRole,
+    canAccessMembers,
+    canAccessSharePrice,
+    canAccessCompanyAmount,
+    canAccessCompanyAccount,
+    canAccessDividend,
+    canAccessAddMember,
+    canAccessReports,
+    canAccessMembershipRefund,
+    canAccessReminders,
+    companyMember
+  ]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-amber-50 to-white">
       {/* Header */}
       <header className="sticky top-0 z-20 bg-white border-b border-amber-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">K-G Admin</h1>
-              <p className="text-sm text-gray-500">
-                {userRole === USER_ROLES.ADMIN ? 'Admin Panel' : 'Employee Dashboard'} - {currentUser?.email}
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
+          <div className="flex items-center justify-between h-14 sm:h-16 py-2">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">K-G Admin</h1>
+              <p className="text-xs sm:text-sm text-gray-500 truncate">
+                {userRole === USER_ROLES.ADMIN ? 'Admin Panel' : 'Employee Dashboard'}
+              </p>
+              <p className="text-xs text-gray-400 truncate sm:hidden">
+                {currentUser?.email}
               </p>
             </div>
-
-            
 
             {/* Logout */}
             <button
               onClick={handleLogout}
-              className="flex items-center gap-2 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm border border-red-200"
+              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs sm:text-sm border border-red-200 flex-shrink-0 ml-2"
             >
               <LogoutIcon />
-              <span>Logout</span>
+              <span className="hidden sm:inline">Logout</span>
             </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Tiles Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          {/* Employee Access Management Tile - Admin Only */}
-          {userRole === USER_ROLES.ADMIN && (
-            <button
-              onClick={() => setShowEmployeeAccess(!showEmployeeAccess)}
-              className="group relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-amber-600 font-medium">Admin Only</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Access To Employees</h3>
-                  <p className="mt-1 text-sm text-gray-500">Manage employee permissions</p>
-                </div>
-                <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
-                  👥
-                </div>
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-4 sm:py-6 space-y-6 sm:space-y-10">
+        {/* Overview Cards */}
+        {infoCards.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+            {infoCards.map(card => (
+              <div key={card.label} className="rounded-xl border border-amber-200 bg-white p-4 sm:p-5 shadow-sm">
+                <p className="text-xs uppercase tracking-wide text-amber-600 font-semibold">{card.label}</p>
+                <p className="mt-2 text-xl sm:text-2xl font-bold text-gray-900">{card.value}</p>
+                <p className="mt-1 text-xs sm:text-sm text-gray-500">{card.subtext}</p>
               </div>
-            </button>
-          )}
+            ))}
+          </div>
+        )}
 
-          {/* Share Price Tile */}
-          {hasTileAccess(TILE_PERMISSIONS.SHARE_PRICE) && (
-            <button
-              onClick={() => navigate('/share-price')}
-              className="group relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-amber-600 font-medium">Pricing</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Monthly Share Price</h3>
-                  <p className="mt-1 text-sm text-gray-500">Set prices month by month</p>
+        {/* Dashboard Sections */}
+        <div className="space-y-6 sm:space-y-10">
+          {dashboardSections
+            .filter(section => section.tiles.some(tile => tile.show))
+            .map(section => (
+              <section key={section.title} className="bg-white rounded-xl sm:rounded-2xl border border-amber-100 shadow-sm p-4 sm:p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 gap-3 sm:gap-4">
+                  <div className="flex-1 min-w-0">
+                    <h2 className="text-base sm:text-lg font-semibold text-gray-900">{section.title}</h2>
+                    <p className="text-xs sm:text-sm text-gray-500 mt-1">{section.description}</p>
+                  </div>
+                  <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 sm:px-3 py-1 rounded-full self-start sm:self-auto">
+                    {section.tiles.filter(tile => tile.show).length} options
+                  </span>
                 </div>
-                <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
-                  ₹
-                </div>
-              </div>
-            </button>
-          )}
 
-          {/* Membership Refund Tile */}
-          {hasTileAccess(TILE_PERMISSIONS.MEMBERS) && (
-            <button
-              onClick={() => navigate('/membership-refund')}
-              className="group relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-amber-600 font-medium">Finance</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Membership Refunds</h3>
-                  <p className="mt-1 text-sm text-gray-500">Settle ₹10,000 refunds (eligible after 5 years)</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                  {section.tiles
+                    .filter(tile => tile.show)
+                    .map(tile => (
+                      <button
+                        key={tile.key}
+                        onClick={tile.onClick}
+                        className="group relative overflow-hidden rounded-xl border border-amber-200 bg-white p-4 sm:p-5 text-left shadow-sm hover:shadow-md transition-shadow"
+                      >
+                        {tile.badge && (
+                          <span className="absolute top-2 right-2 sm:top-3 sm:right-3 text-[10px] font-semibold uppercase tracking-wide text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                            {tile.badge}
+                          </span>
+                        )}
+                        <div className="flex items-start sm:items-center justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-base sm:text-lg font-semibold text-gray-900">{tile.title}</h3>
+                            <p className="mt-1 text-xs sm:text-sm text-gray-500 line-clamp-2">{tile.description}</p>
+                          </div>
+                          <div className="h-10 w-10 sm:h-12 sm:w-12 flex-shrink-0 rounded-md bg-amber-50 flex items-center justify-center text-amber-600 text-lg sm:text-xl">
+                            {typeof tile.icon === 'string' ? tile.icon : tile.icon}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
                 </div>
-                <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
-                  💰
-                </div>
-              </div>
-            </button>
-          )}
-
-          {/* Company Account Tile */}
-          {companyMember && hasTileAccess(TILE_PERMISSIONS.COMPANY_ACCOUNT) && (
-            <button
-              onClick={() => navigate(`/member/${companyMember.id}`)}
-              className="group relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-amber-600 font-medium">Quick Access</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Company Own Account</h3>
-                  <p className="mt-1 text-sm text-gray-500">Member-ID: 2025-002</p>
-                </div>
-                <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
-                  ₹
-                </div>
-              </div>
-            </button>
-          )}
-          {/* Members Tile */}
-          {hasTileAccess(TILE_PERMISSIONS.MEMBERS) && (
-            <button
-              onClick={() => navigate('/members')}
-              className="group relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-amber-600 font-medium">Directory</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Members</h3>
-                  <p className="mt-1 text-sm text-gray-500">Browse and search members</p>
-                </div>
-                <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
-                  <SearchIcon />
-                </div>
-              </div>
-            </button>
-          )}
-
-          {/* Dividend Donation Tile */}
-          {hasTileAccess(TILE_PERMISSIONS.DIVIDEND_DONATION) && (
-            <button
-              onClick={() => navigate('/dividend')}
-              className="group relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-amber-600 font-medium">Donations</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Dividend</h3>
-                  <p className="mt-1 text-sm text-gray-500">Record and manage donations</p>
-                </div>
-                <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
-                  💝
-                </div>
-              </div>
-            </button>
-          )}
-
-          {/* Add Member Tile */}
-          {hasTileAccess(TILE_PERMISSIONS.ADD_MEMBER) && (
-            <button
-              onClick={() => { localStorage.removeItem('currentMemberPhone'); navigate('/personal'); }}
-              className="group relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-amber-600 font-medium">Quick Action</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Add Member</h3>
-                  <p className="mt-1 text-sm text-gray-500">Create a new member</p>
-                </div>
-                <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
-                  <AddIcon />
-                </div>
-              </div>
-            </button>
-          )}
-
-          {/* Company Amount Tile */}
-          {hasTileAccess(TILE_PERMISSIONS.COMPANY_AMOUNT) && (
-            <button
-              onClick={() => navigate('/company-amount')}
-              className="group relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-amber-600 font-medium">Finance</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Company Owns Amount</h3>
-                  <p className="mt-1 text-sm text-gray-500">Manage company capital</p>
-                </div>
-                <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
-                  ₹
-                </div>
-              </div>
-            </button>
-          )}
-
-          {/* Reports Tile */}
-          {hasTileAccess(TILE_PERMISSIONS.DOWNLOAD_REPORT) && (
-            <button
-              onClick={() => navigate('/reports')}
-              className="group relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-amber-600 font-medium">Analytics</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Reports</h3>
-                  <p className="mt-1 text-sm text-gray-500">Generate and download reports</p>
-                </div>
-                <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
-                  📊
-                </div>
-              </div>
-            </button>
-          )}
-
-          {/* Reminders Tile */}
-          {hasTileAccess(TILE_PERMISSIONS.MEMBERS) && (
-            <button
-              onClick={() => navigate('/reminders')}
-              className="group relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-amber-600 font-medium">Management</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Reminders</h3>
-                  <p className="mt-1 text-sm text-gray-500">Insurance expiry & interest lists</p>
-                </div>
-                <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
-                  🔔
-                </div>
-              </div>
-            </button>
-          )}
-
-
-
-          {/* Download Report Tile */}
-          {/* {hasTileAccess(TILE_PERMISSIONS.DOWNLOAD_REPORT) && (
-            <div className="relative overflow-hidden rounded-xl border border-amber-200 bg-white p-5 text-left shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-xs text-amber-600 font-medium">Reports</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Download Report</h3>
-                </div>
-                <div className="h-10 w-10 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
-                  ⤓
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <select
-                  className="px-3 py-2 border border-amber-300 rounded-lg text-sm"
-                  value={reportYear}
-                  onChange={(e) => setReportYear(parseInt(e.target.value))}
-                >
-                  {yearsOptions.map(y => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-                <select
-                  className="px-3 py-2 border border-amber-300 rounded-lg text-sm"
-                  value={reportMonth}
-                  onChange={(e) => setReportMonth(e.target.value)}
-                >
-                  {months.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-                <button
-                  onClick={handleDownloadReport}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm shadow"
-                >
-                  Download
-                </button>
-              </div>
-            </div>
-          )} */}
+              </section>
+            ))}
         </div>
 
-        {/* Employee Access Management Modal */}
-        {showEmployeeAccess && userRole === USER_ROLES.ADMIN && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">Employee Access Management</h2>
+        {/* Report Access Management Modal */}
+        {showReportAccess && userRole === USER_ROLES.ADMIN && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4">
+            <div className="bg-white rounded-xl p-4 sm:p-6 max-w-4xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-start sm:items-center mb-4 sm:mb-6 gap-3">
+                <h2 className="text-lg sm:text-2xl font-bold text-gray-900 flex-1 pr-2">Report Access Management</h2>
                 <button
-                  onClick={() => setShowEmployeeAccess(false)}
-                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                  onClick={() => setShowReportAccess(false)}
+                  className="text-gray-400 hover:text-gray-600 text-2xl sm:text-3xl flex-shrink-0"
+                  aria-label="Close"
                 >
                   ×
                 </button>
               </div>
               
-              <div className="space-y-6">
+              <p className="text-xs sm:text-sm text-gray-600 mb-4 sm:mb-6">
+                Select which reports should be accessible to employees. Only selected reports will be displayed in the Reports page for employees.
+              </p>
+              
+              <div className="space-y-3 sm:space-y-4">
+                {Object.entries({
+                  'DIVIDEND_REPORT': 'Dividend Report',
+                  'CONSOLIDATED_REPORT': 'Company Valuation Report',
+                  'DIRECTORS_REPORT': 'Directors Valuation Report',
+                  'FETCH_ALL_DETAILS': 'Complete System Report',
+                  'CONSOLIDATED_SHARES': 'Share Distribution Report',
+                  'TOTAL_COMPANY_POOLED': 'Company Funds Report',
+                  'MONTHLY_FUNDING_AUDIT': 'Monthly Audit Report',
+                  'NEW_SHARES_CURRENT': 'Current Month Shares Report',
+                  'NEW_SHARES_MONTHWISE': 'Monthly Shares Report'
+                }).map(([reportKey, reportName]) => {
+                  const hasAccess = loadEmployeeReportAccess()[reportKey] || false;
+                  
+                  return (
+                    <div key={reportKey} className="flex items-start sm:items-center justify-between p-3 sm:p-4 border border-gray-200 rounded-lg hover:bg-gray-50 gap-3">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs sm:text-sm font-medium text-gray-900 block">{reportName}</span>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {reportKey === 'DIVIDEND_REPORT' && 'Member shares and dividend eligibility'}
+                          {reportKey === 'CONSOLIDATED_REPORT' && 'Company financial summary and valuation'}
+                          {reportKey === 'DIRECTORS_REPORT' && 'Share price history and valuations'}
+                          {reportKey === 'FETCH_ALL_DETAILS' && 'Complete system data export'}
+                          {reportKey === 'CONSOLIDATED_SHARES' && 'Member share ownership distribution'}
+                          {reportKey === 'TOTAL_COMPANY_POOLED' && 'Company funds with date range'}
+                          {reportKey === 'MONTHLY_FUNDING_AUDIT' && 'Monthly audit verification forms'}
+                          {reportKey === 'NEW_SHARES_CURRENT' && 'Current month new shares issued'}
+                          {reportKey === 'NEW_SHARES_MONTHWISE' && 'Month-wise share issuance breakdown'}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => updateEmployeeReportAccess(reportKey, !hasAccess)}
+                        className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+                          hasAccess ? 'bg-amber-600' : 'bg-gray-200'
+                        }`}
+                        aria-label={`Toggle ${reportName} access`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            hasAccess ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              
+              <div className="mt-4 sm:mt-6 flex justify-end">
+                <button
+                  onClick={() => setShowReportAccess(false)}
+                  className="w-full sm:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm sm:text-base"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Employee Access Management Modal */}
+        {showEmployeeAccess && userRole === USER_ROLES.ADMIN && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4">
+            <div className="bg-white rounded-xl p-4 sm:p-6 max-w-4xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-start sm:items-center mb-4 sm:mb-6 gap-3">
+                <h2 className="text-lg sm:text-2xl font-bold text-gray-900 flex-1 pr-2">Employee Access Management</h2>
+                <button
+                  onClick={() => setShowEmployeeAccess(false)}
+                  className="text-gray-400 hover:text-gray-600 text-2xl sm:text-3xl flex-shrink-0"
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+              
+              <div className="space-y-4 sm:space-y-6">
                 {Object.keys(EMPLOYEE_CREDENTIALS).map(employeeEmail => (
-                  <div key={employeeEmail} className="border border-gray-200 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                      {getEmployeeDisplayName(employeeEmail)} ({employeeEmail})
+                  <div key={employeeEmail} className="border border-gray-200 rounded-lg p-3 sm:p-4">
+                    <h3 className="text-sm sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 break-words">
+                      <span className="block sm:inline">{getEmployeeDisplayName(employeeEmail)}</span>
+                      <span className="block text-xs sm:text-sm text-gray-500 sm:inline sm:ml-1 sm:text-gray-900">
+                        ({employeeEmail})
+                      </span>
                     </h3>
                     
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
                       {Object.entries(TILE_PERMISSIONS)
                         .filter(([key, value]) => value !== TILE_PERMISSIONS.EMPLOYEE_ACCESS)
                         .map(([key, tileKey]) => {
@@ -590,19 +653,22 @@ const Admin = () => {
                             [TILE_PERMISSIONS.ADD_MEMBER]: 'Add Member',
                             [TILE_PERMISSIONS.COMPANY_AMOUNT]: 'Company Owns Amount',
                             [TILE_PERMISSIONS.SHARE_PRICE]: 'Share Price',
-                            [TILE_PERMISSIONS.DOWNLOAD_REPORT]: 'Download Report'
+                            [TILE_PERMISSIONS.DOWNLOAD_REPORT]: 'Download Report',
+                            [TILE_PERMISSIONS.MEMBERSHIP_REFUND]: 'Membership Refunds',
+                            [TILE_PERMISSIONS.REMINDERS]: 'Reminders'
                           };
                           
                           return (
-                            <div key={tileKey} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
-                              <span className="text-sm font-medium text-gray-700">
+                            <div key={tileKey} className="flex items-center justify-between p-2 sm:p-3 border border-gray-100 rounded-lg gap-2">
+                              <span className="text-xs sm:text-sm font-medium text-gray-700 flex-1 min-w-0">
                                 {tileNames[tileKey]}
                               </span>
                               <button
                                 onClick={() => handleToggleEmployeePermission(employeeEmail, tileKey)}
-                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
                                   hasAccess ? 'bg-amber-600' : 'bg-gray-200'
                                 }`}
+                                aria-label={`Toggle ${tileNames[tileKey]} access for ${getEmployeeDisplayName(employeeEmail)}`}
                               >
                                 <span
                                   className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -618,10 +684,10 @@ const Admin = () => {
                 ))}
               </div>
               
-              <div className="mt-6 flex justify-end">
+              <div className="mt-4 sm:mt-6 flex justify-end">
                 <button
                   onClick={() => setShowEmployeeAccess(false)}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg"
+                  className="w-full sm:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm sm:text-base"
                 >
                   Close
                 </button>

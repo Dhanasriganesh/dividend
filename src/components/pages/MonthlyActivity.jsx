@@ -140,6 +140,11 @@ function MonthlyActivity() {
     }
   }, [invAmount, currentSharePrice]);
 
+  // reset fine input whenever member changes (prevents accidental reuse)
+  useEffect(() => {
+    setInvFine('');
+  }, [member?.id]);
+
   // Generate and prefill a custom receipt number when switching to Investment
   useEffect(() => {
     const prefillReceipt = async () => {
@@ -220,7 +225,8 @@ function MonthlyActivity() {
       const isCompanyMember = (member?.payment?.membershipId === "2025-002") || (member?.payment_membership_id === "2025-002");
       
       // For company account, set fine to 0; otherwise use the entered fine amount
-      const investmentFine = isCompanyMember ? 0 : parseFloat(invFine || 0) || 0;
+      const enteredFine = parseFloat(invFine);
+      const investmentFine = isCompanyMember ? 0 : (Number.isFinite(enteredFine) && enteredFine > 0 ? enteredFine : 0);
       
       // Generate fallback receipt if admin didn't edit or prefill failed
       const yr = parseInt(year, 10);
@@ -640,16 +646,21 @@ function MonthlyActivity() {
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">
                       Fine (₹) — optional
-                      {isCompanyAccount && <span className="text-xs text-amber-600 ml-2">(No fine for company account)</span>}
                     </label>
-                    <input 
-                      type="number" 
-                      value={isCompanyAccount ? '0' : invFine} 
-                      onChange={(e) => setInvFine(e.target.value)} 
-                      className={`w-full px-3 py-2 rounded-lg border border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500 ${isCompanyAccount ? 'bg-amber-50' : ''}`}
-                      placeholder={isCompanyAccount ? 'No fine applied' : 'Enter fine'} 
-                      disabled={loadingMember || !isEditablePeriod || isCompanyAccount}
-                    />
+                    {isCompanyAccount ? (
+                      <div className="w-full px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-sm text-amber-700">
+                        Company account investments never incur fines.
+                      </div>
+                    ) : (
+                      <input 
+                        type="number" 
+                        value={invFine} 
+                        onChange={(e) => setInvFine(e.target.value)} 
+                        className="w-full px-3 py-2 rounded-lg border border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        placeholder="Enter fine (leave empty for none)" 
+                        disabled={loadingMember || !isEditablePeriod}
+                      />
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Current Share price for {month} {year}</label>
