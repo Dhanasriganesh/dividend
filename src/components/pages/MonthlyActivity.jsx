@@ -228,7 +228,7 @@ function MonthlyActivity() {
       const enteredFine = parseFloat(invFine);
       const investmentFine = isCompanyMember ? 0 : (Number.isFinite(enteredFine) && enteredFine > 0 ? enteredFine : 0);
       
-      // Generate fallback receipt if admin didn't edit or prefill failed
+      // Generate fallback system receipt if admin didn't edit or prefill failed
       const yr = parseInt(year, 10);
       const monthIdx = Math.max(0, months.indexOf(month || ''));
       const mm = String(monthIdx + 1).padStart(2, '0');
@@ -247,7 +247,10 @@ function MonthlyActivity() {
         });
       } catch (_) {}
       const sequence = monthInvestmentCount + 1;
-      const generatedReceipt = `${mm}${yy}-${String(sequence).padStart(4, '0')}`;
+      // System receipt pattern: MON-001, MON-002, ... per calendar month
+      const monthAbbrev = (months[monthIdx] || month || '').slice(0, 3).toUpperCase();
+      const systemReceipt = `${monthAbbrev}-${String(sequence).padStart(3, '0')}`;
+      const generatedReceipt = systemReceipt;
       const customReceiptToUse = (invCustomReceipt && invCustomReceipt.trim()) ? invCustomReceipt.trim() : generatedReceipt;
       
       const payload = {
@@ -257,6 +260,7 @@ function MonthlyActivity() {
           fine: investmentFine,
           sharePrice: currentSharePrice || 0,
           shares: calculatedShares || 0,
+          systemReceipt,
           customReceipt: customReceiptToUse,
           manualReceipt: invManualReceipt || '',
           createdAt: new Date()

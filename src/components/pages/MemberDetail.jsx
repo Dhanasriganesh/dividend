@@ -241,6 +241,11 @@ const MemberDetail = () => {
   }, [member, startingYear]);
 
   const yearPayments = member?.payments?.[selectedYear] || {};
+  
+  // Check if this is the Company Account
+  const isCompanyAccount = member?.payment?.membershipId === '2025-002';
+  
+  // Calculate overview stats (only for Company Account)
   const paidMonths = Object.entries(yearPayments).filter(([m, value]) => {
     const amt = typeof value === 'object' ? parseFloat(value.amount || 0) : parseFloat(value || 0);
     return amt && amt > 0;
@@ -252,7 +257,6 @@ const MemberDetail = () => {
     const amt = typeof value === 'object' ? parseFloat(value.amount || 0) : parseFloat(value || 0);
     return sum + (amt || 0);
   }, 0);
-  const membershipPaidAmount = parseFloat(member?.payment?.payingMembershipAmount || 0);
 
   // Payment status logic
   const getPaymentStatus = (amount) => {
@@ -356,23 +360,26 @@ const MemberDetail = () => {
               </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-amber-200 p-6">
-              <h3 className="text-sm font-semibold text-slate-700 mb-4">Overview</h3>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-lg bg-amber-50 p-3 text-center border border-amber-200">
-                  <div className="text-2xl font-bold text-amber-700">{paidCount}</div>
-                  <div className="text-xs text-slate-500">Paid</div>
-            </div>
-                <div className="rounded-lg bg-amber-50 p-3 text-center border border-amber-200">
-                  <div className="text-2xl font-bold text-amber-700">₹{totalAmount}</div>
-                  <div className="text-xs text-slate-500">Total Paid</div>
-                </div>
-                <div className="rounded-lg bg-amber-50 p-3 text-center border border-amber-200">
-                  <div className="text-2xl font-bold text-amber-700">{Math.min(paymentPercentage, 100)}%</div>
-                  <div className="text-xs text-slate-500">Completion</div>
+            {/* Overview tile - only for Company Account */}
+            {isCompanyAccount && (
+              <div className="bg-white rounded-xl shadow-sm border border-amber-200 p-6">
+                <h3 className="text-sm font-semibold text-slate-700 mb-4">Company Overview</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-lg bg-amber-50 p-3 text-center border border-amber-200">
+                    <div className="text-2xl font-bold text-amber-700">{paidCount}</div>
+                    <div className="text-xs text-slate-500">Paid</div>
+                  </div>
+                  <div className="rounded-lg bg-amber-50 p-3 text-center border border-amber-200">
+                    <div className="text-2xl font-bold text-amber-700">₹{totalAmount}</div>
+                    <div className="text-xs text-slate-500">Total Paid</div>
+                  </div>
+                  <div className="rounded-lg bg-amber-50 p-3 text-center border border-amber-200">
+                    <div className="text-2xl font-bold text-amber-700">{Math.min(paymentPercentage, 100)}%</div>
+                    <div className="text-xs text-slate-500">Completion</div>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             <div className="bg-white rounded-xl shadow-sm border border-amber-200 p-6">
               <h3 className="text-sm font-semibold text-slate-700 mb-2">Membership Amount</h3>

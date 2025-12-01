@@ -180,7 +180,20 @@ const Admin = () => {
   const totalPaidThisMonth = members.reduce((total, member) => {
     const val = getPaymentFor(member, reportYear, reportMonth);
     const amount = typeof val === 'object' ? parseFloat(val?.amount || 0) : parseFloat(val || 0);
-    return total + (amount > 0 ? 1 : 0);
+    
+    // Also check for investments in activities (the actual investment data)
+    const activities = member.activities || {};
+    const yearData = activities[reportYear] || {};
+    const monthData = yearData[reportMonth] || {};
+    const investment = monthData?.investment || (monthData?.type === 'investment' ? monthData : null);
+    const investmentAmount = investment ? parseFloat(investment.amount || 0) : 0;
+    
+    // Count as paid if either payment exists OR investment exists
+    const hasPaid = amount > 0 || investmentAmount > 0;
+    
+    console.log(`Member ${member.name}: payment=${amount}, investment=${investmentAmount}, hasPaid=${hasPaid}`);
+    
+    return total + (hasPaid ? 1 : 0);
   }, 0);
 
   const yearsOptions = Array.from({ length: 6 }, (_, i) => currentYear - i);
@@ -297,6 +310,7 @@ const Admin = () => {
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Report');
     XLSX.writeFile(workbook, `investment_report_${reportYear}_${reportMonth}.xlsx`);
   };
+
 
   const infoCards = React.useMemo(() => [
     {
@@ -695,6 +709,7 @@ const Admin = () => {
             </div>
           </div>
         )}
+
 
         {/* Members Section moved to dedicated page at /members */}
       </main>

@@ -12,6 +12,7 @@ const Dividend = () => {
   const [endDate, setEndDate] = useState('');
   const [totalShares, setTotalShares] = useState(0);
   const [totalProfitLoss, setTotalProfitLoss] = useState(0);
+  const [originalCalculatedProfit, setOriginalCalculatedProfit] = useState(0);
   const [profitDistributionPerShare, setProfitDistributionPerShare] = useState(0);
   const [tableData, setTableData] = useState([]);
   const [distributedProfits, setDistributedProfits] = useState(false);
@@ -26,12 +27,83 @@ const Dividend = () => {
   const [reportEndDate, setReportEndDate] = useState('');
   const [donationHistory, setDonationHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  
+  // Manual profit entry state
+  const [showProfitEntry, setShowProfitEntry] = useState(false);
+  const [profitAmount, setProfitAmount] = useState('');
+  const [profitDescription, setProfitDescription] = useState('');
+  const [savingProfit, setSavingProfit] = useState(false);
+  const [currentManualProfit, setCurrentManualProfit] = useState(null);
 
   // Fetch all members on component mount
   useEffect(() => {
     fetchMembers();
     fetchDonationHistory();
+    fetchCurrentManualProfit();
   }, []);
+
+  // Fetch current manual profit entry
+  const fetchCurrentManualProfit = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('manual_profit_entries')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+      setCurrentManualProfit(data?.[0] || null);
+    } catch (error) {
+      console.error('Error fetching manual profit:', error);
+    }
+  };
+
+  const handleSaveProfit = async () => {
+    if (!profitAmount.trim()) {
+      alert('Please enter a profit amount');
+      return;
+    }
+
+    const amount = parseFloat(profitAmount);
+    if (isNaN(amount)) {
+      alert('Please enter a valid number');
+      return;
+    }
+
+    setSavingProfit(true);
+    try {
+      // Deactivate previous entries
+      await supabase
+        .from('manual_profit_entries')
+        .update({ is_active: false })
+        .eq('is_active', true);
+
+      // Insert new entry
+      const { error } = await supabase
+        .from('manual_profit_entries')
+        .insert({
+          profit_amount: amount,
+          description: profitDescription.trim() || 'Manual profit entry',
+          is_active: true,
+          created_by: 'admin',
+          created_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+
+      alert('Profit amount saved successfully!');
+      setShowProfitEntry(false);
+      setProfitAmount('');
+      setProfitDescription('');
+      fetchCurrentManualProfit();
+    } catch (error) {
+      console.error('Error saving profit:', error);
+      alert('Error saving profit: ' + error.message);
+    } finally {
+      setSavingProfit(false);
+    }
+  };
 
   // Fetch members from database
   const fetchMembers = async () => {
@@ -169,6 +241,7 @@ const Dividend = () => {
       // Update state
       setTotalShares(totalSharesValue);
       setTotalProfitLoss(totalProfitLossValue);
+      setOriginalCalculatedProfit(totalProfitLossValue); // Store original calculated profit
       setProfitDistributionPerShare(profitPerShare);
       setDistributedProfits(false);
 
@@ -208,20 +281,53 @@ const Dividend = () => {
   };
 
   // Handle Distribute Profits button click
-  const handleDistributeProfits = () => {
-    if (!filtersApplied || profitDistributionPerShare === 0) {
+  const handleDistributeProfits = async () => {
+    if (!filtersApplied) {
       alert('Please apply filters first to calculate profit distribution');
       return;
     }
 
-    // Calculate profit for each member
-    const updatedTableData = tableData.map(member => ({
-      ...member,
-      profitToDistribute: member.totalShares * profitDistributionPerShare,
-    }));
+    // Fetch manual profit entry
+    try {
+      const { data: manualProfitData, error } = await supabase
+        .from('manual_profit_entries')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1);
 
-    setTableData(updatedTableData);
-    setDistributedProfits(true);
+      if (error) throw error;
+
+      const manualProfit = manualProfitData?.[0];
+      if (!manualProfit || manualProfit.profit_amount <= 0) {
+        alert('No manual profit amount set. Please set profit amount using the Manual Profit Entry tile.');
+        return;
+      }
+
+      const totalManualProfit = parseFloat(manualProfit.profit_amount);
+      const manualProfitPerShare = totalManualProfit / totalShares;
+
+      // Subtract manual profit from original calculated profit
+      const remainingProfit = originalCalculatedProfit - totalManualProfit;
+      setTotalProfitLoss(remainingProfit);
+      
+      // Update the profit distribution per share for calculations
+      setProfitDistributionPerShare(manualProfitPerShare);
+
+      // Calculate profit for each member using manual profit
+      const updatedTableData = tableData.map(member => ({
+        ...member,
+        profitToDistribute: member.totalShares * manualProfitPerShare,
+      }));
+
+      setTableData(updatedTableData);
+      setDistributedProfits(true);
+
+      alert(`Using manual profit: ₹${totalManualProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })} (${manualProfit.description})`);
+    } catch (error) {
+      console.error('Error fetching manual profit:', error);
+      alert('Error fetching manual profit: ' + error.message);
+    }
   };
 
   // Handle opening report popup
@@ -330,6 +436,13 @@ const Dividend = () => {
           return { ...member, donation: 'Eligible' };
         }
 
+        // Company Account (2025-002) is always eligible - EXCEPTION
+        const isCompanyAccount = fullMember?.payment?.membershipId === '2025-002' || 
+                                fullMember?.payment_membership_id === '2025-002';
+        if (isCompanyAccount) {
+          return { ...member, donation: 'Eligible' };
+        }
+
         const joiningDate = getMemberJoiningDate(fullMember);
 
         // Check if joined in last month
@@ -356,6 +469,13 @@ const Dividend = () => {
       reportDataCopy = reportDataCopy.map(member => {
         const fullMember = members.find(m => m.id === member.id);
         if (!fullMember) {
+          return { ...member, donation: 'Eligible' };
+        }
+
+        // Company Account (2025-002) is always eligible - EXCEPTION
+        const isCompanyAccount = fullMember?.payment?.membershipId === '2025-002' || 
+                                fullMember?.payment_membership_id === '2025-002';
+        if (isCompanyAccount) {
           return { ...member, donation: 'Eligible' };
         }
 
@@ -486,17 +606,22 @@ const Dividend = () => {
         const eventName = `Dividend Distribution ${start.toLocaleDateString()} - ${end.toLocaleDateString()} (${reportOptionUsed.replace('except ', '')})`;
         
         // Create dividend donation event
+        // Get manual profit amount for distributed amount column
+        const manualProfitAmount = currentManualProfit ? parseFloat(currentManualProfit.profit_amount) : 0;
+        
         // Ensure all numeric values are properly parsed and rounded to 2 decimals for currency
         const sharePrice = parseFloat(Number(endSharePrice).toFixed(2));
         const distributionPool = parseFloat(Number(totalProfitLoss).toFixed(2));
         const companyInvestment = parseFloat(Number(totalIneligibleProfit).toFixed(2));
         const sharesPurchased = parseFloat(Number(companyShares).toFixed(2));
+        const distributedAmount = parseFloat(Number(manualProfitAmount).toFixed(2));
         
         const eventData = {
           event_name: String(eventName),
           event_date: String(reportEndDate),
           share_price_at_event: sharePrice,
           distribution_pool: distributionPool,
+          distributed_amount: distributedAmount,
           company_investment_amount: companyInvestment,
           company_shares_purchased: sharesPurchased,
           status: 'confirmed',
@@ -554,7 +679,7 @@ const Dividend = () => {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Top Tiles Section */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           {/* Total Number of Shares Tile */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <div className="text-sm text-gray-600 mb-1">Total Number of Shares</div>
@@ -573,12 +698,37 @@ const Dividend = () => {
               totalProfitLoss >= 0 ? 'text-green-600' : 'text-red-600'
             }`}>
               Total Profit/Loss
+              {distributedProfits && (
+                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                  Manual Entry
+                </span>
+              )}
             </div>
             <div className={`text-3xl font-bold ${
               totalProfitLoss >= 0 ? 'text-green-800' : 'text-red-800'
             }`}>
               ₹{totalProfitLoss.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
+          </div>
+
+          {/* Manual Profit Entry Tile */}
+          <div className="bg-blue-50 rounded-lg shadow-sm border border-blue-200 p-6">
+            <div className="text-sm text-blue-600 mb-1">Manual Profit Entry</div>
+            <div className="text-2xl font-bold text-blue-800 mb-3">
+              {currentManualProfit ? 
+                `₹${parseFloat(currentManualProfit.profit_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : 
+                'Not Set'
+              }
+            </div>
+            {currentManualProfit && (
+              <div className="text-xs text-blue-600 mb-3">{currentManualProfit.description}</div>
+            )}
+            <button
+              onClick={() => setShowProfitEntry(true)}
+              className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
+            >
+              {currentManualProfit ? 'Update Profit' : 'Set Profit'}
+            </button>
           </div>
         </div>
 
@@ -762,7 +912,10 @@ const Dividend = () => {
                         Share Price
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Distribution Pool
+                        Available Distribution Pool
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Distributed Amount
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Company Investment
@@ -814,6 +967,12 @@ const Dividend = () => {
                               maximumFractionDigits: 2 
                             })}
                           </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-blue-600 text-right">
+                            ₹{parseFloat(event.distributed_amount || 0).toLocaleString('en-IN', { 
+                              minimumFractionDigits: 2, 
+                              maximumFractionDigits: 2 
+                            })}
+                          </td>
                           <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-green-600 text-right">
                             ₹{parseFloat(event.company_investment_amount || 0).toLocaleString('en-IN', { 
                               minimumFractionDigits: 2, 
@@ -853,6 +1012,14 @@ const Dividend = () => {
                         <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">
                           ₹{donationHistory.reduce((sum, event) => 
                             sum + parseFloat(event.distribution_pool || 0), 0
+                          ).toLocaleString('en-IN', { 
+                            minimumFractionDigits: 2, 
+                            maximumFractionDigits: 2 
+                          })}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-semibold text-blue-600 text-right">
+                          ₹{donationHistory.reduce((sum, event) => 
+                            sum + parseFloat(event.distributed_amount || 0), 0
                           ).toLocaleString('en-IN', { 
                             minimumFractionDigits: 2, 
                             maximumFractionDigits: 2 
@@ -1077,6 +1244,77 @@ const Dividend = () => {
                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Generating...' : 'Generate'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Profit Entry Modal */}
+      {showProfitEntry && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-900">Set Manual Profit</h2>
+              <button
+                onClick={() => setShowProfitEntry(false)}
+                className="text-gray-400 hover:text-gray-600 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Profit Amount (₹)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={profitAmount}
+                  onChange={(e) => setProfitAmount(e.target.value)}
+                  placeholder="Enter profit amount"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Description (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={profitDescription}
+                  onChange={(e) => setProfitDescription(e.target.value)}
+                  placeholder="e.g., Q4 2024 Profit Distribution"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              
+              {currentManualProfit && (
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    <strong>Current:</strong> ₹{parseFloat(currentManualProfit.profit_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-xs text-blue-600 mt-1">{currentManualProfit.description}</p>
+                </div>
+              )}
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowProfitEntry(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveProfit}
+                disabled={savingProfit}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50"
+              >
+                {savingProfit ? 'Saving...' : 'Save Profit'}
               </button>
             </div>
           </div>

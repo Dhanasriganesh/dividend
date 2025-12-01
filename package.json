@@ -8,11 +8,16 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "db:setup": "node scripts/setup-supabase-db.js"
+    "db:setup": "node scripts/setup-supabase-db.js",
+    "db:reset-member-totals": "node scripts/reset-member-totals.js",
+    "db:reset-member-shares": "node scripts/reset-member-shares-final.js",
+    "db:update-goutham": "node scripts/update-goutham-data.js",
+    "db:update-sandesh": "node scripts/update-sandesh-data.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
     "@tailwindcss/vite": "^4.1.10",
+    "exceljs": "^4.4.0",
     "jspdf": "^3.0.3",
     "lucide-react": "^0.537.0",
     "react": "^19.1.0",
